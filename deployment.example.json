@@ -1,0 +1,8 @@
+{
+  "url": "https://pool.example.com/",
+  "remote_directory": "/srv/rainbow-pool",
+  "service": "rainbow-pool.service",
+  "port": 3000,
+  "version": "1.3.0",
+  "physics_version": 3
+}

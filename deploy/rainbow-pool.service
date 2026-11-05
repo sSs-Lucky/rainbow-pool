@@ -1,0 +1,23 @@
+[Unit]
+Description=RainBow Pool HTTP and WebSocket service
+After=network.target
+
+[Service]
+Type=simple
+User=pool
+Group=pool
+WorkingDirectory=/srv/rainbow-pool
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+Environment=POOL_DATA_DIR=/var/lib/rainbow-pool
+EnvironmentFile=-/etc/rainbow-pool.env
+StateDirectory=rainbow-pool
+ExecStart=/usr/bin/node /srv/rainbow-pool/server.mjs
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

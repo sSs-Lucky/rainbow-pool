@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Test two-player rooms and free-ball flow
+        shell: bash
+        run: |
+          PORT=3177 HOST=127.0.0.1 POOL_DATA_DIR="$RUNNER_TEMP/rainbow-pool-ci" node server.mjs > "$RUNNER_TEMP/rainbow-pool-ci.log" 2>&1 &
+          pool_server_pid=$!
+          trap 'kill "$pool_server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 50); do
+            if curl --fail --silent http://127.0.0.1:3177/health > /dev/null; then
+              break
+            fi
+            sleep 0.2
+          done
+          POOL_TEST_URL=http://127.0.0.1:3177 npm run test:network

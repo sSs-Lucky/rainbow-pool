@@ -1,0 +1,94 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { WebSocket } from 'ws';
+const base = process.env.POOL_TEST_URL || 'http://127.0.0.1:3000';
+const endpoint = base.replace(/^http/, 'ws') + '/ws';
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+function client() {
+  const socket = new WebSocket(endpoint); const messages = [];
+  socket.on('message', raw => messages.push(JSON.parse(raw)));
+  const opened = new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
+  async function wait(predicate, timeout = 15000, after = 0) {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) { const found = messages.slice(after).find(predicate); if (found) return found; await delay(20); }
+    throw new Error('Timed out waiting for game state');
+  }
+  return { socket, messages, opened, wait, send: m => socket.send(JSON.stringify(m)), state: () => messages.filter(m => m.type === 'state').at(-1) };
+}
+test('two seats, authoritative turns, fouls, reconnection and room isolation', { timeout: 60000 }, async t => {
+  const clients = []; const make = () => { const c = client(); clients.push(c); return c; };
+  t.after(() => { for (const c of clients) c.socket.terminate(); });
+  const one = make(); await one.opened; one.send({ action: 'create' });
+  const host = await one.wait(m => m.type === 'ready'); assert.equal(host.player, 1);
+  const two = make(); await two.opened; two.send({ action: 'join', code: host.code });
+  const guest = await two.wait(m => m.type === 'ready'); assert.equal(guest.player, 2);
+  await one.wait(m => m.type === 'state' && m.connected.length === 2);
+  const third = make(); await third.opened; third.send({ action: 'join', code: host.code });
+  assert.equal((await third.wait(m => m.type === 'error')).code, 'full');
+  const stranger = make(); await stranger.opened; stranger.send({ action: 'join', code: 'XXXXXX' });
+  assert.equal((await stranger.wait(m => m.type === 'error')).code, 'notFound');
+  two.send({ type: 'aim', angle: 1, power: .4 }); await delay(100);
+  assert.equal(one.messages.filter(m => m.type === 'aim').length, 0, 'opponent cannot control the active cue');
+  one.send({ type: 'aim', angle: .123456, power: .6, tip: { x: .3, y: -.4 } });
+  const preview = await two.wait(m => m.type === 'aim'); assert.equal(preview.player, 1); assert.equal(preview.power, .6); assert.deepEqual(preview.tip, { x: .3, y: -.4 }); assert.ok(Math.abs(preview.angle-.123456)<1e-10);
+  two.send({ type: 'shoot', dx: 1, dy: 0, power: 1 }); await delay(180);
+  assert.equal(one.state().shots, 0, 'guest cannot shoot out of turn');
+  one.send({ type: 'shoot', dx: -1, dy: 0, power: 0.25, tip: { x: .3, y: -.4 } });
+  const moving = await one.wait(m => m.type === 'state' && m.shots === 1 && !m.settled);
+  assert.ok(moving.balls[0].wz > 0 && moving.balls[0].wy > 0);
+  assert.equal(moving.physicsVersion, 3);
+  const settled = await one.wait(m => m.type === 'state' && m.shots === 1 && m.settled);
+  assert.equal(settled.turn, 2); assert.equal(settled.ballInHand, true); assert.equal(settled.reason, 'wrongFirst');
+  await two.wait(m => m.type === 'state' && m.shots === 1 && m.settled);
+  assert.deepEqual(two.state().balls, settled.balls, 'both players receive identical positions');
+  two.send({ type: 'shoot', dx: 1, dy: 0, power: 1 }); await delay(100);
+  assert.equal(two.state().shots, 1, 'must place free ball before shooting');
+  two.send({ type: 'place', x: 280, y: 280 });
+  await two.wait(m => m.type === 'state' && m.shots === 1 && !m.ballInHand);
+  two.send({ type: 'shoot', dx: 1, dy: 0, power: 0.4 });
+  await one.wait(m => m.type === 'state' && m.shots === 2);
+  two.socket.close(); await delay(100);
+  const rejoined = make(); await rejoined.opened;
+  rejoined.send({ action: 'join', code: host.code, token: guest.token });
+  assert.equal((await rejoined.wait(m => m.type === 'ready')).player, 2);
+  assert.equal((await rejoined.wait(m => m.type === 'state')).shots, 2, 'reconnect keeps progress');
+  const beforeRestart = one.messages.length;
+  rejoined.send({ type: 'restart' });
+  await one.wait(m => m.type === 'state' && m.shots === 0 && m.connected.length === 2, 15000, beforeRestart);
+  assert.equal(one.state().balls.filter(b => b.p).length, 0);
+  const response = await fetch(base + '/.runtime/rooms.json'); assert.equal(response.status, 404);
+  assert.equal((await fetch(base + '/health')).status, 200);
+});
+
+test('scratch changes turns and allows only the opponent to reposition and confirm a free ball', {timeout:60000}, async t=>{
+  const clients=[];const make=()=>{const c=client();clients.push(c);return c;};
+  t.after(()=>{for(const c of clients)c.socket.terminate();});
+  const one=make();await one.opened;one.send({action:'create'});
+  const host=await one.wait(m=>m.type==='ready');
+  let two=make();await two.opened;two.send({action:'join',code:host.code});
+  const guest=await two.wait(m=>m.type==='ready');
+  await one.wait(m=>m.type==='state'&&m.connected.length===2);
+  one.send({type:'shoot',dx:-1,dy:-1,power:.45});
+  const foul=await one.wait(m=>m.type==='state'&&m.shots===1&&m.settled);
+  assert.equal(foul.reason,'scratch');assert.equal(foul.turn,2);assert.equal(foul.ballInHand,true);assert.equal(foul.cuePotted,true);
+  await two.wait(m=>m.type==='state'&&m.shots===1&&m.settled);
+  one.send({type:'place',x:200,y:420,confirm:true});one.send({type:'shoot',dx:1,dy:0,power:.5});
+  two.send({type:'shoot',dx:1,dy:0,power:.5});await delay(120);
+  assert.equal(two.state().shots,1);assert.equal(two.state().cuePotted,true,'the fouling player cannot replace the cue');
+  two.send({type:'place',x:750,y:280,confirm:false});await two.wait(m=>m.type==='placeRejected');
+  two.send({type:'place',x:200,y:420,confirm:false});
+  await two.wait(m=>m.type==='state'&&m.ballInHand&&!m.cuePotted&&m.balls[0].x===200);
+  two.send({type:'place',x:880,y:160,confirm:false});
+  const moved=await one.wait(m=>m.type==='state'&&m.ballInHand&&!m.cuePotted&&m.balls[0].x===880);
+  assert.equal(moved.balls[0].y,160,'ball may be placed on either half of the table');
+  two.send({type:'shoot',dx:-1,dy:0,power:.3});await delay(100);assert.equal(two.state().shots,1,'previewing placement must not unlock shooting');
+  two.socket.close();two=make();await two.opened;two.send({action:'join',code:host.code,token:guest.token});
+  const restored=await two.wait(m=>m.type==='state'&&m.connected.length===2);
+  assert.equal(restored.ballInHand,true);assert.equal(restored.balls[0].x,880);
+  two.send({type:'place',x:880,y:160,confirm:true});
+  await two.wait(m=>m.type==='state'&&!m.ballInHand&&!m.cuePotted);
+  const before=one.messages.length;
+  two.send({type:'shoot',dx:-1,dy:.1,power:.2});
+  const shooting=await one.wait(m=>m.type==='state'&&m.shots===2&&!m.settled,15000,before);
+  assert.equal(shooting.turn,2);assert.equal(shooting.ballInHand,false);
+});

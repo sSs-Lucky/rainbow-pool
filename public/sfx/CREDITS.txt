@@ -1,0 +1,15 @@
+All sounds in this folder are CC0 (public domain) — no attribution required, kept here for traceability.
+
+ball-hit-1.ogg, ball-hit-2.ogg, rail-hit.ogg, pocket.ogg, cue-strike.ogg
+  Source: "75 CC0 Breaking, Falling & Hit SFX" by rubberduck — opengameart.org/content/75-cc0-breaking-falling-hit-sfx
+
+ui-click.ogg, ui-hover.ogg
+  Source: "UI Sound Effects (Buttons, Switches and Clicks)" by Kenney — opengameart.org/content/51-ui-sound-effects-buttons-switches-and-clicks
+
+notify.ogg, turn-chime.ogg, win.ogg, lose.ogg
+  Source: "Level Up / Power Up / Coin Get (13 sounds)" — opengameart.org/content/level-up-power-up-coin-get-13-sounds
+
+music-loop.ogg
+  Source: "Calm Loop" by wipics — opengameart.org/content/calm-loop
+
+All converted to .ogg (Vorbis) and loudness-normalized for the game.
