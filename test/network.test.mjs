@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WebSocket } from 'ws';
+import { BALL_R, HEAD_STRING } from '../src/config.js';
+import { POCKETS } from '../src/geometry.js';
 const base = process.env.POOL_TEST_URL || 'http://127.0.0.1:3000';
 const endpoint = base.replace(/^http/, 'ws') + '/ws';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -15,83 +17,161 @@ function client() {
   }
   return { socket, messages, opened, wait, send: m => socket.send(JSON.stringify(m)), state: () => messages.filter(m => m.type === 'state').at(-1) };
 }
-test('two seats, authoritative turns, fouls, reconnection and room isolation', { timeout: 60000 }, async t => {
-  const clients = []; const make = () => { const c = client(); clients.push(c); return c; };
-  t.after(() => { for (const c of clients) c.socket.terminate(); });
-  const one = make(); await one.opened; one.send({ action: 'create' });
-  const host = await one.wait(m => m.type === 'ready'); assert.equal(host.player, 1);
-  const two = make(); await two.opened; two.send({ action: 'join', code: host.code });
-  const guest = await two.wait(m => m.type === 'ready'); assert.equal(guest.player, 2);
-  await one.wait(m => m.type === 'state' && m.connected.length === 2);
-  const third = make(); await third.opened; third.send({ action: 'join', code: host.code });
+const open = { 1: null, 2: null };
+const state = (client, predicate, after = 0) => client.wait(m => m.type === 'state' && predicate(m), 20000, after);
+const settled = (client, shots) => state(client, m => m.shots === shots && m.settled);
+const opponent = player => player === 1 ? 2 : 1;
+const shoot = (client, dx, dy, power, call) => client.send({ type: 'shoot', dx, dy, power, call });
+
+async function connectMatch(t) {
+  const clients = [];
+  const make = () => {
+    const c = client();
+    clients.push(c);
+    return c;
+  };
+  t.after(() => clients.forEach(c => c.socket.terminate()));
+  const host = make();
+  await host.opened;
+  host.send({ action: 'create' });
+  const owner = await host.wait(m => m.type === 'ready');
+  assert.equal(owner.player, 1);
+  const guest = make();
+  await guest.opened;
+  guest.send({ action: 'join', code: owner.code });
+  const invitee = await guest.wait(m => m.type === 'ready');
+  assert.equal(invitee.player, 2);
+  const initial = await state(host, m => m.connected.length === 2);
+  await state(guest, m => m.connected.length === 2);
+  const players = { 1: host, 2: guest }, refs = { 1: owner, 2: invitee };
+  async function reconnect(player) {
+    players[player].socket.close();
+    const c = make();
+    await c.opened;
+    c.send({ action: 'join', code: owner.code, token: refs[player].token });
+    assert.equal((await c.wait(m => m.type === 'ready')).player, player);
+    return c;
+  }
+  return { host, guest, owner, make, initial, players, reconnect };
+}
+
+async function place(c, x, y, confirm = true) {
+  c.send({ type: 'place', x, y, confirm });
+  return state(c, m => m.ballInHand === !confirm && !m.cuePotted && m.balls[0].x === x && m.balls[0].y === y);
+}
+
+test('both seats sync 3D rotation; break pots stay open until a normal pot assigns groups without a call', { timeout: 60000 }, async t => {
+  const { host, owner, make, initial, players, reconnect } = await connectMatch(t);
+  assert.equal(initial.breaking, true);
+  assert.equal(initial.placementZone, 'head');
+  assert.deepEqual(initial.groups, open);
+  assert.equal(initial.balls[5].n, 8, 'black eight is in the center of the triangle');
+  const bottomCorners = [initial.balls[11].n, initial.balls[15].n];
+  assert.equal(bottomCorners.filter(n => n < 8).length, 1);
+
+  const third = make(); await third.opened; third.send({ action: 'join', code: owner.code });
   assert.equal((await third.wait(m => m.type === 'error')).code, 'full');
   const stranger = make(); await stranger.opened; stranger.send({ action: 'join', code: 'XXXXXX' });
   assert.equal((await stranger.wait(m => m.type === 'error')).code, 'notFound');
-  two.send({ type: 'aim', angle: 1, power: .4 }); await delay(100);
-  assert.equal(one.messages.filter(m => m.type === 'aim').length, 0, 'opponent cannot control the active cue');
-  one.send({ type: 'aim', angle: .123456, power: .6, tip: { x: .3, y: -.4 } });
-  const preview = await two.wait(m => m.type === 'aim'); assert.equal(preview.player, 1); assert.equal(preview.power, .6); assert.deepEqual(preview.tip, { x: .3, y: -.4 }); assert.ok(Math.abs(preview.angle-.123456)<1e-10);
-  two.send({ type: 'shoot', dx: 1, dy: 0, power: 1 }); await delay(180);
-  assert.equal(one.state().shots, 0, 'guest cannot shoot out of turn');
-  one.send({ type: 'shoot', dx: -1, dy: 0, power: 0.25, tip: { x: .3, y: -.4 } });
-  const moving = await one.wait(m => m.type === 'state' && m.shots === 1 && !m.settled);
-  assert.ok(moving.balls[0].wz > 0 && moving.balls[0].wy > 0);
-  assert.equal(moving.physicsVersion, 3);
-  const settled = await one.wait(m => m.type === 'state' && m.shots === 1 && m.settled);
-  assert.equal(settled.turn, 2); assert.equal(settled.ballInHand, true); assert.equal(settled.reason, 'wrongFirst');
-  const guestSettled = await two.wait(m => m.type === 'state' && m.shots === 1 && m.settled);
-  const finalCue = settled.balls[0];
-  assert.equal(finalCue.q.length, 4);
-  assert.ok(Math.abs(Math.hypot(...finalCue.q) - 1) < .0002);
-  assert.deepEqual(guestSettled.balls, settled.balls, 'both players receive identical positions and orientations');
-  two.send({ type: 'shoot', dx: 1, dy: 0, power: 1 }); await delay(100);
-  assert.equal(two.state().shots, 1, 'must place free ball before shooting');
-  two.send({ type: 'place', x: 280, y: 280 });
-  await two.wait(m => m.type === 'state' && m.shots === 1 && !m.ballInHand);
-  two.send({ type: 'shoot', dx: 1, dy: 0, power: 0.4 });
-  await one.wait(m => m.type === 'state' && m.shots === 2);
-  two.socket.close(); await delay(100);
-  const rejoined = make(); await rejoined.opened;
-  rejoined.send({ action: 'join', code: host.code, token: guest.token });
-  assert.equal((await rejoined.wait(m => m.type === 'ready')).player, 2);
-  assert.equal((await rejoined.wait(m => m.type === 'state')).shots, 2, 'reconnect keeps progress');
-  const beforeRestart = one.messages.length;
-  rejoined.send({ type: 'restart' });
-  await one.wait(m => m.type === 'state' && m.shots === 0 && m.connected.length === 2, 15000, beforeRestart);
-  assert.equal(one.state().balls.filter(b => b.p).length, 0);
-  const response = await fetch(base + '/.runtime/rooms.json'); assert.equal(response.status, 404);
+
+  const breaker = initial.turn;
+  const active = players[breaker], passive = players[opponent(breaker)];
+  await place(active, HEAD_STRING - BALL_R, 280);
+  passive.send({ type: 'aim', angle: 1, power: .4 });
+  shoot(passive, 1, 0, 1);
+  await delay(100);
+  assert.equal(active.messages.filter(m => m.type === 'aim').length, 0);
+  assert.equal(active.state().shots, 0);
+
+  active.send({ type: 'aim', angle: .12, power: .6, tip: { x: .3, y: -.4 } });
+  const aim = await passive.wait(m => m.type === 'aim');
+  assert.equal(aim.player, breaker);
+  assert.deepEqual(aim.tip, { x: .3, y: -.4 });
+  shoot(active, 1, 0, .85);
+  await state(passive, m => m.shots === 1 && !m.settled && m.balls[0].q?.length === 4);
+  const broken = await settled(active, 1);
+  const otherView = await settled(passive, 1);
+  assert.equal(broken.reason, 'breakPot');
+  assert.equal(broken.turn, breaker);
+  assert.equal(broken.breaking, false);
+  assert.deepEqual(broken.groups, open);
+  assert.deepEqual(otherView.balls, broken.balls);
+  assert.ok(Math.abs(Math.hypot(...broken.balls[0].q) - 1) < .0002);
+
+  const apex = broken.balls[1], cue = broken.balls[0], pocket = POCKETS[0];
+  const dx = pocket.x - apex.x, dy = pocket.y - apex.y, length = Math.hypot(dx, dy);
+  const aimX = apex.x - 2 * BALL_R * dx / length - cue.x;
+  const aimY = apex.y - 2 * BALL_R * dy / length - cue.y;
+  shoot(active, aimX, aimY, .75);
+  const assigned = await settled(active, 2);
+  assert.equal(assigned.reason, 'groupsSet');
+  assert.equal(assigned.groups[breaker], apex.n < 8 ? 'solids' : 'stripes');
+  assert.equal(assigned.turn, breaker);
+  assert.deepEqual((await settled(passive, 2)).groups, assigned.groups);
+  const again = await reconnect(opponent(breaker));
+  assert.deepEqual((await state(again, m => m.connected.length === 2)).groups, assigned.groups);
+
+  const offset = active.messages.length;
+  again.send({ type: 'restart' });
+  const restarted = await state(active, m => m.shots === 0 && m.breaking, offset);
+  assert.equal(restarted.turn, opponent(breaker));
+  assert.deepEqual(restarted.groups, open);
+  assert.equal(restarted.balls.filter(b => b.p).length, 0);
+  assert.equal((await fetch(base + '/.runtime/rooms.json')).status, 404);
   assert.equal((await fetch(base + '/health')).status, 200);
 });
 
-test('scratch changes turns and allows only the opponent to reposition and confirm a free ball', {timeout:60000}, async t=>{
-  const clients=[];const make=()=>{const c=client();clients.push(c);return c;};
-  t.after(()=>{for(const c of clients)c.socket.terminate();});
-  const one=make();await one.opened;one.send({action:'create'});
-  const host=await one.wait(m=>m.type==='ready');
-  let two=make();await two.opened;two.send({action:'join',code:host.code});
-  const guest=await two.wait(m=>m.type==='ready');
-  await one.wait(m=>m.type==='state'&&m.connected.length===2);
-  one.send({type:'shoot',dx:-1,dy:-1,power:.45});
-  const foul=await one.wait(m=>m.type==='state'&&m.shots===1&&m.settled);
-  assert.equal(foul.reason,'scratch');assert.equal(foul.turn,2);assert.equal(foul.ballInHand,true);assert.equal(foul.cuePotted,true);
-  await two.wait(m=>m.type==='state'&&m.shots===1&&m.settled);
-  one.send({type:'place',x:200,y:420,confirm:true});one.send({type:'shoot',dx:1,dy:0,power:.5});
-  two.send({type:'shoot',dx:1,dy:0,power:.5});await delay(120);
-  assert.equal(two.state().shots,1);assert.equal(two.state().cuePotted,true,'the fouling player cannot replace the cue');
-  two.send({type:'place',x:750,y:280,confirm:false});await two.wait(m=>m.type==='placeRejected');
-  two.send({type:'place',x:200,y:420,confirm:false});
-  await two.wait(m=>m.type==='state'&&m.ballInHand&&!m.cuePotted&&m.balls[0].x===200);
-  two.send({type:'place',x:880,y:160,confirm:false});
-  const moved=await one.wait(m=>m.type==='state'&&m.ballInHand&&!m.cuePotted&&m.balls[0].x===880);
-  assert.equal(moved.balls[0].y,160,'ball may be placed on either half of the table');
-  two.send({type:'shoot',dx:-1,dy:0,power:.3});await delay(100);assert.equal(two.state().shots,1,'previewing placement must not unlock shooting');
-  two.socket.close();two=make();await two.opened;two.send({action:'join',code:host.code,token:guest.token});
-  const restored=await two.wait(m=>m.type==='state'&&m.connected.length===2);
-  assert.equal(restored.ballInHand,true);assert.equal(restored.balls[0].x,880);
-  two.send({type:'place',x:880,y:160,confirm:true});
-  await two.wait(m=>m.type==='state'&&!m.ballInHand&&!m.cuePotted);
-  const before=one.messages.length;
-  two.send({type:'shoot',dx:-1,dy:.1,power:.2});
-  const shooting=await one.wait(m=>m.type==='state'&&m.shots===2&&!m.settled,15000,before);
-  assert.equal(shooting.turn,2);assert.equal(shooting.ballInHand,false);
+test('opening scratch restricts white placement to the head area; a later scratch grants the entire table', { timeout: 60000 }, async t => {
+  const { initial, players, reconnect } = await connectMatch(t);
+  const breaker = initial.turn, fouling = players[breaker], receiving = players[opponent(breaker)];
+  await place(fouling, 100, 100);
+  shoot(fouling, -1, -1, .35);
+  const scratch = await settled(receiving, 1);
+  assert.equal(scratch.reason, 'breakScratch');
+  assert.equal(scratch.turn, opponent(breaker));
+  assert.equal(scratch.ballInHand, true);
+  assert.equal(scratch.cuePotted, true);
+  assert.equal(scratch.placementZone, 'head');
+  assert.deepEqual(scratch.groups, open);
+
+  fouling.send({ type: 'place', x: 123, y: 100 });
+  receiving.send({ type: 'place', x: 880, y: 160 });
+  await receiving.wait(m => m.type === 'placeRejected');
+  assert.equal(receiving.state().cuePotted, true);
+  await place(receiving, 100, 100, false);
+  shoot(receiving, -1, -1, .35, { safety: true });
+  await delay(100);
+  assert.equal(receiving.state().shots, 1, 'previewing the white does not unlock the stroke');
+  const resumed = await reconnect(opponent(breaker));
+  const restored = await state(resumed, m => m.connected.length === 2);
+  assert.equal(restored.ballInHand, true);
+  assert.equal(restored.placementZone, 'head');
+  assert.equal(restored.balls[0].x, 100);
+  await place(resumed, 100, 100);
+  shoot(resumed, -1, -1, .35, { safety: true });
+  const later = await settled(fouling, 2);
+  assert.equal(later.reason, 'scratch');
+  assert.equal(later.turn, breaker);
+  assert.equal(later.placementZone, 'table');
+  assert.equal(later.ballInHand, true);
+  await place(fouling, 880, 160);
+});
+
+test('an illegal break offers the opponent the choice to re-rack and open', { timeout: 40000 }, async t => {
+  const { initial, players } = await connectMatch(t);
+  const active = players[initial.turn], incoming = players[opponent(initial.turn)];
+  await place(active, HEAD_STRING - BALL_R, 280);
+  shoot(active, 1, 0, .05);
+  const decision = await settled(incoming, 1);
+  assert.equal(decision.breakDecision, 'illegalBreak');
+  assert.equal(decision.turn, opponent(initial.turn));
+  active.send({ type: 'breakChoice', choice: 'rebreak' });
+  await delay(100);
+  assert.equal(incoming.state().breakDecision, 'illegalBreak');
+  const offset = incoming.messages.length;
+  incoming.send({ type: 'breakChoice', choice: 'rebreak' });
+  const rerack = await state(incoming, m => m.shots === 0 && m.breaking, offset);
+  assert.equal(rerack.turn, opponent(initial.turn));
+  assert.equal(rerack.ballInHand, true);
+  assert.deepEqual(rerack.groups, open);
 });

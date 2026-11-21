@@ -56,6 +56,23 @@
 #placement-bar{display:none;position:fixed;left:95px;right:91px;bottom:max(8px,env(safe-area-inset-bottom));z-index:9;align-items:center;justify-content:center;gap:14px;padding:8px 14px;background:#173c2bf5;border:1px solid #e8c97799;border-radius:12px;color:#f2e3af;box-shadow:0 3px 18px #0005}#placement-bar.show{display:flex}#placement-status{font-size:12px;line-height:1.5}#btn-place-confirm{flex-shrink:0;padding:8px 18px;background:#b0efb1;color:#102f20;border:1px solid #c7f9bd;border-radius:9px;font-size:13px;font-weight:700}#btn-place-confirm:disabled{opacity:.4;cursor:default}.placing #hint{display:none}.in-game.placing #app{bottom:66px}
 @media(max-height:520px) and (orientation:landscape){#placement-bar{left:80px;right:79px;bottom:5px;padding:5px 9px;gap:9px;border-radius:9px}#placement-status{font-size:10px}#btn-place-confirm{font-size:11px;padding:6px 12px}.in-game.placing #app{bottom:48px}}
 @media(max-width:700px) and (orientation:landscape){#placement-bar{left:65px;right:65px;gap:6px}#placement-status{font-size:9px}#btn-place-confirm{padding:6px 9px;font-size:10px}}
+#hud-group[data-open]{display:inline-flex!important}
+#call-bar,#break-bar{position:fixed;left:95px;right:91px;bottom:max(8px,env(safe-area-inset-bottom));z-index:9;
+  display:flex;align-items:center;justify-content:center;gap:10px;padding:6px 10px;
+  background:#173c2bf5;border:1px solid #a6c79772;border-radius:12px;color:#e1edce;font-size:12px}
+#call-bar[hidden],#break-bar[hidden]{display:none}
+#call-bar label{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+#call-bar select,#break-bar button{min-height:32px;padding:4px 8px;border:1px solid #7c9c86;
+  border-radius:7px;background:#132e23;color:#f2f6e8;font:inherit}
+#call-safety[aria-pressed="true"]{background:#b0efb1;color:#102f20}
+#break-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:5px}
+.in-game.calling #app,.in-game.break-choice #app{bottom:65px}
+.calling #hint,.break-choice #hint{display:none}
+@media(max-height:520px) and (orientation:landscape){
+  #call-bar,#break-bar{left:65px;right:65px;bottom:5px;padding:4px 6px;gap:5px;font-size:10px}
+  #call-bar select,#break-bar button{min-height:29px;padding:3px 6px}
+  .in-game.calling #app,.in-game.break-choice #app{bottom:48px}
+}
 </style>
 </head>
 <body>
@@ -65,11 +82,23 @@
 <aside id="precision-control" aria-label="精细瞄准与加塞"><span class="precision-title">微调</span><output id="fine-value">0.00°</output><button class="fine-step" id="fine-minus" aria-label="逆时针微调 0.05 度" disabled>−</button><button id="fine-track" type="button" role="slider" aria-label="瞄准角度微调，上下拖动" aria-orientation="vertical" aria-valuemin="-180" aria-valuemax="180" aria-valuenow="0" disabled><span id="fine-handle"></span></button><button class="fine-step" id="fine-plus" aria-label="顺时针微调 0.05 度" disabled>＋</button><span class="precision-foot">上下滑动<br>松手保留方向</span><button id="spin-open" aria-label="设置白球击点与加塞" aria-haspopup="dialog" disabled><span id="spin-dot"></span></button><span id="spin-caption">中杆</span></aside>
 <div id="spin-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="spin-title"><div class="box"><h2 id="spin-title">白球击点</h2><p>点击或拖动红点，选择球杆接触白球的位置。</p><div class="spin-target"><span class="spin-direction top">高杆 · 跟进</span><span class="spin-direction bottom">低杆 · 回拉</span><span class="spin-direction left">左塞</span><span class="spin-direction right">右塞</span><button id="spin-pad" aria-label="白球击点，方向键微调，Home 回中"><span id="spin-pad-dot"></span></button></div><p id="spin-description" aria-live="polite">中杆 · 不加塞</p><p class="spin-help">虚线圈内为可用击点。回拉取决于距离和力度；左右塞主要影响碰球、碰库。</p><div class="row"><button id="spin-reset">回到中杆</button><button class="primary" id="spin-done">确定</button></div></div></div>
 
-<div id="hud"><div class="stats"><span class="pill" id="hud-turn">轮到你</span><span class="pill" id="hud-group">全色球</span><span class="pill"><span data-i18n="shots">击球</span> <b id="hud-shots">0</b></span><span class="pill"><span data-i18n="potted">进球</span> <b id="hud-potted">0/7</b></span><span id="connection"></span></div><div class="actions"><button id="btn-mute" aria-label="切换声音" title="切换声音">🔇</button><button id="btn-fullscreen" title="全屏">全屏</button><button id="btn-restart" data-i18n="restart">再来一局</button><button id="btn-menu" data-i18n="menu">退出</button></div></div>
+<div id="hud"><div class="stats"><span class="pill" id="hud-turn">轮到你</span><span class="pill" id="hud-group">全色球</span><span class="pill"><span data-i18n="shots">击球</span> <b id="hud-shots">0</b></span><span class="pill"><span data-i18n="potted">进球</span> <b id="hud-potted">0/7</b></span><span id="connection"></span></div><div class="actions"><button id="call-safety" type="button" aria-pressed="false" hidden>防守杆</button><button id="btn-mute" aria-label="切换声音" title="切换声音">🔇</button><button id="btn-fullscreen" title="全屏">全屏</button><button id="btn-restart" data-i18n="restart">再来一局</button><button id="btn-menu" data-i18n="menu">退出</button></div></div>
 <div id="placement-bar"><span id="placement-status" role="status"></span><button id="btn-place-confirm" disabled>确认摆球</button></div>
+<div id="call-bar" aria-label="黑 8 袋口" hidden>
+  <label>黑 8 袋口 <select id="call-pocket">
+    <option value="">选袋口</option><option value="0">左上</option><option value="1">中上</option><option value="2">右上</option>
+    <option value="3">左下</option><option value="4">中下</option><option value="5">右下</option>
+  </select></label>
+</div>
+<div id="break-bar" hidden><span id="break-status" role="status"></span><div id="break-actions"></div></div>
 <div id="balls-left"></div><div id="hint" class="gone" data-i18n="aimHint"></div><div id="toast" role="status"></div><div id="banner"><div class="txt"></div></div>
 <div id="confirm-modal" class="modal"><div class="box"><p id="confirm-text"></p><div class="row"><button id="confirm-reject" data-i18n="reject">取消</button><button class="primary" id="confirm-accept" data-i18n="accept">确定</button></div></div></div>
-<div id="rules-modal" class="modal"><div class="box"><h2>一张球桌，两位朋友</h2><p>房主打全色球 1–7，朋友打花色球 9–15。先清完自己的球，最后打进黑 8 即获胜。<br><br>在球桌上拖动手指调方向，球杆会跟随转动。瞄准后，从左侧力度条顶端向下拉，松手出杆。往回推可以取消蓄力。右侧竖条上下滑动可以精调角度，松手保留方向；＋/− 每次微调 0.05°。点击右下角白球，再拖动红点选择高杆、低杆或左右塞。高低杆的效果取决于力度和碰球距离，左右塞主要影响碰库反弹。瞄准时白线从白球球心指向碰撞点，金色短箭头表示目标球初始方向参考；蓄力时指引保持稳定。它不表示行程长度或后续碰球、碰库轨迹，实际效果也受力度和加塞影响。打进自己的球可以继续击球。白球落袋、先碰错球或未碰球属犯规，对手获得自由球。白球落袋后会明确换权；获得自由球的一方可在整个台面点击或反复拖动白球，点击“确认摆球”后再瞄准出杆，不能与其他球或袋口重叠。<br><br>手机请横屏。需要离开一下？保留当前页面，回来会自动重连。</p><div class="row"><button class="primary" id="btn-rules-close">知道了</button></div></div></div>
+<div id="rules-modal" class="modal"><div class="box"><h2>八球玩法</h2>
+<p><strong>开球。</strong>首局随机开球，之后轮流。把白球摆到左侧开球线后。合法开球进球可以继续打，此时球桌仍然开放。没进球时，至少四颗不同的目标球要碰库。</p>
+<p><strong>定组。</strong>普通球瞄准后直接打。开球后首次合法进球决定全色球 1–7 或花色球 9–15，另一组给对手。同杆进两组，以最先入袋的球为准。防守杆结束后换手。</p>
+<p><strong>胜负。</strong>清完自己那组才能叫黑 8 和袋口。白球落袋、未碰目标球或先碰错球会换手并判自由球。开球白球落袋时，自由球限开球线后。</p>
+<p><strong>击球。</strong>拖动球桌瞄准，左侧力度条向下拉，松手出杆。右侧微调角度，右下角白球可设置加塞。手机横屏体验更佳。</p>
+<div class="row"><button class="primary" id="btn-rules-close">知道了</button></div></div></div>
 <div id="menu" class="booting"><div class="menu-shell"><div class="brand"><div class="ball-mark"><span>8</span></div><div class="eyebrow">RAINBOW BILLIARDS</div><h1>和朋友，<br>来一局。</h1><p>一张球桌，一条邀请链接。<br>不用下载，入座就开打。</p></div><div class="menu-right">
 <div class="screen active" id="screen-main"><button class="glass primary" id="btn-create" data-i18n="create">创建房间 · 邀请好友</button><button class="glass" id="btn-join" data-i18n="join">输入房间码</button><button class="glass" id="btn-solo" data-i18n="solo">单人练球</button><button class="glass small" id="btn-settings">怎么玩？</button><p class="small-note" id="boot-status" role="status">正在准备球桌…</p><p class="small-note">手机横屏体验更佳 · 两人八球对战</p></div>
 <div class="screen" id="screen-host"><div class="panel"><div class="hint" data-i18n="hostHint"></div><div class="code" id="host-code">······</div><div class="invite-row"><button class="glass primary" id="btn-copy">复制邀请链接</button><button class="glass" id="btn-share">分享</button></div><p class="invite-link" id="invite-link"></p><div class="status" id="host-status">正在准备球桌…</div></div><button class="glass small" data-back="screen-main" data-i18n="back">返回首页</button></div>

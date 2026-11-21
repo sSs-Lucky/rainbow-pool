@@ -1,4 +1,4 @@
-import { CUSHION, TABLE_W, TABLE_H, BALL_R, POCKET_CAPTURE_R } from './config.js';
+import { CUSHION, TABLE_W, TABLE_H, BALL_R, POCKET_CAPTURE_R, HEAD_STRING } from './config.js';
 
 const L = CUSHION, R = L + TABLE_W, T = CUSHION, B = T + TABLE_H, M = (L + R) / 2;
 const corner = 31, side = 24, back = 18;
@@ -36,8 +36,9 @@ export function closestOnSegment(x, y, s) {
   const t = Math.max(0, Math.min(1, ((x - s.ax) * dx + (y - s.ay) * dy) / (s.length * s.length)));
   return { x: s.ax + t * dx, y: s.ay + t * dy, t };
 }
-export function validPlacement(x, y, balls, cue) {
+export function validPlacement(x, y, balls, cue, zone = 'table') {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+  if (zone === 'head' && x >= HEAD_STRING) return false;
   if (x < L + BALL_R || x > R - BALL_R || y < T + BALL_R || y > B - BALL_R || pocketAt(x, y)) return false;
   if (CUSHION_SEGMENTS.some(s => { const p = closestOnSegment(x, y, s); return Math.hypot(x - p.x, y - p.y) < BALL_R - 1e-6; })) return false;
   return !balls.some(b => b !== cue && !b.potted && Math.hypot(x - b.x, y - b.y) < BALL_R * 2 + .1);

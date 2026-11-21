@@ -1,5 +1,5 @@
 import { Container, Graphics, Sprite, Texture, FillGradient } from 'pixi.js';
-import { CANVAS_W, CANVAS_H, CUSHION, TABLE_W, TABLE_H, BALL_R, POCKET_R, BALL_COLORS } from './config.js';
+import { CANVAS_W, CANVAS_H, CUSHION, HEAD_STRING, TABLE_W, TABLE_H, BALL_R, POCKET_R, BALL_COLORS } from './config.js';
 import { pocketPositions } from './physics.js';
 import { predictDirections } from './aiming.js';
 import { CUSHION_POLYGONS } from './geometry.js';
@@ -144,8 +144,9 @@ export function drawAim(g, cue, balls, angle, _power = 0, tip = { x: 0, y: 0 }) 
     end.x - size * d.x + size * .48 * d.y, end.y - size * d.y - size * .48 * d.x]).fill(0xffdc70);
 }
 
-export function drawPlacement(g, point, valid) {
+export function drawPlacement(g, point, valid, headOnly = false) {
   g.clear();
+  if (headOnly) dashedLine(g, HEAD_STRING, CUSHION, HEAD_STRING, CUSHION + TABLE_H, 0xf8e6a1, .68);
   if (!point) return;
   const color = valid ? 0xa9f6a4 : 0xff6474;
   g.circle(point.x, point.y, BALL_R + 8).stroke({ width: 2, color, alpha: .9 });
@@ -154,4 +155,10 @@ export function drawPlacement(g, point, valid) {
   if (!valid) {
     g.moveTo(point.x - 5, point.y - 5).lineTo(point.x + 5, point.y + 5).moveTo(point.x + 5, point.y - 5).lineTo(point.x - 5, point.y + 5).stroke({ width: 2, color: 0xc22239 });
   }
+}
+
+export function drawCall(g, ball, pocket) {
+  g.clear();
+  if (ball) g.circle(ball.x, ball.y, BALL_R + 5).stroke({ width: 2, color: 0x9befff, alpha: .9 });
+  if (pocket) g.circle(pocket.x, pocket.y, POCKET_R + 5).stroke({ width: 3, color: 0x9befff, alpha: .9 });
 }

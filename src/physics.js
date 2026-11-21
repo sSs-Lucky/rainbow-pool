@@ -1,5 +1,5 @@
 import {
-  TABLE_W, TABLE_H, CUSHION, BALL_R, BALL_COLORS, PHYSICAL_R as R, BALL_MASS as M,
+  TABLE_W, TABLE_H, CUSHION, BALL_R, BALL_COLORS, HEAD_STRING, FOOT_SPOT, PHYSICAL_R as R, BALL_MASS as M,
   PIXELS_PER_METRE as SCALE, GRAVITY as G, SLIDING_FRICTION as MU_S,
   ROLLING_FRICTION as MU_R, SPIN_DECELERATION, WALL_RESTITUTION,
   CUSHION_FRICTION, CUSHION_NOSE_HEIGHT, BALL_RESTITUTION, MAX_SHOT_SPEED, MAX_TIP_OFFSET,
@@ -11,12 +11,12 @@ const I = 2 / 5 * M * R * R;
 const EPS = 1e-9;
 export const pocketPositions = () => POCKETS;
 const make = (x, y, n) => ({ x, y, vx: 0, vy: 0, wx: 0, wy: 0, wz: 0, number: n, color: BALL_COLORS[n], potted: false });
-export function rack() {
-  const balls = [make(CUSHION + TABLE_W * .25, CUSHION + TABLE_H / 2, 0)];
-  const order = [1, 9, 2, 10, 8, 3, 4, 11, 5, 12, 6, 13, 7, 14, 15];
+const defaultRack = [1, 9, 2, 10, 8, 3, 4, 11, 5, 12, 6, 13, 7, 14, 15];
+export function rack(order = defaultRack) {
+  const balls = [make(HEAD_STRING, CUSHION + TABLE_H / 2, 0)];
   let n = 0;
   for (let row = 0; row < 5; row++) for (let i = 0; i <= row; i++) {
-    balls.push(make(CUSHION + TABLE_W * .72 + row * (R * SCALE * Math.sqrt(3) + .1),
+    balls.push(make(FOOT_SPOT + row * (R * SCALE * Math.sqrt(3) + .1),
       CUSHION + TABLE_H / 2 + (i - row / 2) * (2 * BALL_R + .1), order[n++]));
   }
   return balls;
@@ -169,12 +169,14 @@ function collideRails(b, hits) {
 export function step(balls, dt = 1 / 60) {
   if (!Number.isFinite(dt) || dt <= 0 || dt > .1) throw new RangeError('Physics step must be 0 < dt <= 0.1 seconds');
   const hits = [], potted = [];
+  let crossedHead = false;
   const maxSpeed = balls.reduce((s, b) => b.potted ? s : Math.max(s, Math.hypot(b.vx, b.vy), R * Math.hypot(b.wx || 0, b.wy || 0)), 0);
   const sub = Math.max(1, Math.ceil(maxSpeed * SCALE * dt / (BALL_R * .22))), h = dt / sub;
   for (let n = 0; n < sub; n++) {
     const active = balls.filter(b => !b.potted);
     for (const b of active) {
       evolveCloth(b, h, true);
+      if (b.number === 0 && b.x >= HEAD_STRING) crossedHead = true;
       if (pocketAt(b.x, b.y)) { b.potted = true; clearMotion(b); potted.push(b); }
       else collideRails(b, hits);
     }
@@ -186,10 +188,17 @@ export function step(balls, dt = 1 / 60) {
       const nx = dx / distance, ny = dy / distance, overlap = (BALL_R * 2 - distance + 1e-5) / 2;
       a.x -= nx * overlap; a.y -= ny * overlap; b.x += nx * overlap; b.y += ny * overlap;
       const speed = resolveBallCollision(a, b, nx, -ny);
-      if (speed > EPS) hits.push({ type: 'ball', speed: speed * SCALE / 60, a: a.number, b: b.number });
+      if (speed > EPS) {
+        const hit = { type: 'ball', speed: speed * SCALE / 60, a: a.number, b: b.number };
+        if (a.number === 0 || b.number === 0) {
+          hit.objectBehindHead = (a.number === 0 ? b : a).x < HEAD_STRING;
+          hit.crossedHead = crossedHead;
+        }
+        hits.push(hit);
+      }
     }
   }
-  return { potted, hits };
+  return { potted, hits, crossedHead };
 }
 export function placeCueExact(cue, balls, x, y) {
   if (!validPlacement(x, y, balls, cue)) return false;

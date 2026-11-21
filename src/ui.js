@@ -59,25 +59,28 @@ export function updateHud(shots, potted, total) {
   if (el('hud-potted').textContent !== `${potted}/${total}`) el('hud-potted').textContent = `${potted}/${total}`;
 }
 
-export function updateTurn(mode, mine, ballInHand = false) {
+export function updateTurn(mode, mine, ballInHand = false, breaking = false, deciding = false) {
   const e = el('hud-turn');
   if (mode === 'solo') {
     e.style.display = 'none';
     return;
   }
   e.style.display = '';
-  e.textContent = ballInHand ? (mine ? '你可摆放白球' : '对手摆放白球') : mine ? '轮到你' : '等待对手';
+  e.textContent = deciding ? (mine ? '你选择开球结果' : '等待对手选择') :
+    breaking ? (mine ? '你来开球' : '对手开球') :
+    ballInHand ? (mine ? '你可摆放白球' : '对手摆放白球') : mine ? '轮到你' : '等待对手';
   e.style.background = mine ? 'rgba(70,220,140,.28)' : 'rgba(220,90,90,.28)';
 }
 
 export function updateGroup(mode, group) {
   const g = el('hud-group');
-  if (mode === 'solo' || !group) {
+  g.toggleAttribute('data-open', mode !== 'solo' && !group);
+  if (mode === 'solo') {
     g.style.display = 'none';
     return;
   }
   g.style.display = '';
-  g.textContent = group === 'stripes' ? t('stripes') : t('solids');
+  g.textContent = !group ? '开放球台' : group === 'stripes' ? t('stripes') : t('solids');
 }
 
 export function setStatus(id, text, error = false) {
