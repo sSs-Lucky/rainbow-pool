@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rack, shoot, step, allStopped, evolveCloth, resolveBallCollision, resolveCushion, energy, clampTip, placeCue } from '../src/physics.js';
-import { PHYSICAL_R as R, PIXELS_PER_METRE as SCALE, BALL_MASS as M, BALL_RESTITUTION as E, GRAVITY as G, SLIDING_FRICTION as MU } from '../src/config.js';
+import { PHYSICAL_R as R, PIXELS_PER_METRE as SCALE, BALL_MASS as M, BALL_RESTITUTION as E, GRAVITY as G, SLIDING_FRICTION as MU, SPIN_DECELERATION } from '../src/config.js';
 import { POCKETS, CUSHION_SEGMENTS, validPlacement } from '../src/geometry.js';
 const ball = (x=280,y=280,number=0) => ({x,y,number,vx:0,vy:0,wx:0,wy:0,wz:0,potted:false});
 const near = (a,b,tol=1e-8) => assert.ok(Math.abs(a-b)<tol, `${a} ≈ ${b}`);
@@ -11,6 +11,28 @@ test('sliding-to-rolling transition obeys 5/7 speed and no-slip constraint', () 
   const t=2/(7*MU*G); evolveCloth(b,t);
   near(b.vx,5/7); near(b.wy,b.vx/R); near(b.vy+R*b.wx,0);
   const before=energy(b); evolveCloth(b,.3); assert.ok(energy(b)<before);
+});
+test('a rolling ball turns by the distance travelled divided by its radius', () => {
+  const b = ball();
+  const startX = b.x, startY = b.y;
+  b.vx = .4; b.vy = .3;
+  b.wx = -b.vy / R; b.wy = b.vx / R;
+  for (let i = 0; i < 10; i++) step([b]);
+  const half = Math.hypot(b.x - startX, b.y - startY) / (R * SCALE * 2);
+  near(b.q[0], -.6 * Math.sin(half)); near(b.q[1], .8 * Math.sin(half));
+  near(b.q[2], 0); near(b.q[3], Math.cos(half));
+});
+test('side spin can turn the ball surface while its center stays still', () => {
+  const b = ball();
+  const spin = .7;
+  b.wz = spin;
+  for (let i = 0; i < 6; i++) step([b]);
+  near(b.x, 280); near(b.y, 280); near(b.wz, 0);
+  const half = spin ** 2 / (4 * SPIN_DECELERATION);
+  near(b.q[2], Math.sin(half)); near(b.q[3], Math.cos(half));
+  const stopped = b.q;
+  step([b]);
+  assert.equal(b.q, stopped);
 });
 test('tip offset obeys angular impulse, safe circle and fixed energy budget', () => {
   const center=ball(),spin=ball(); shoot(center,1,0,.5); shoot(spin,1,0,.5,{x:.3,y:.4});

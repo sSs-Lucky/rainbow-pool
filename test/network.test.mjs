@@ -39,8 +39,11 @@ test('two seats, authoritative turns, fouls, reconnection and room isolation', {
   assert.equal(moving.physicsVersion, 3);
   const settled = await one.wait(m => m.type === 'state' && m.shots === 1 && m.settled);
   assert.equal(settled.turn, 2); assert.equal(settled.ballInHand, true); assert.equal(settled.reason, 'wrongFirst');
-  await two.wait(m => m.type === 'state' && m.shots === 1 && m.settled);
-  assert.deepEqual(two.state().balls, settled.balls, 'both players receive identical positions');
+  const guestSettled = await two.wait(m => m.type === 'state' && m.shots === 1 && m.settled);
+  const finalCue = settled.balls[0];
+  assert.equal(finalCue.q.length, 4);
+  assert.ok(Math.abs(Math.hypot(...finalCue.q) - 1) < .0002);
+  assert.deepEqual(guestSettled.balls, settled.balls, 'both players receive identical positions and orientations');
   two.send({ type: 'shoot', dx: 1, dy: 0, power: 1 }); await delay(100);
   assert.equal(two.state().shots, 1, 'must place free ball before shooting');
   two.send({ type: 'place', x: 280, y: 280 });

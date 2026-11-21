@@ -48,7 +48,11 @@ function state(room) {
   return { type: 'state', turn: room.turn, settled: !room.shooting, cuePotted: room.balls[0].potted,
     ballInHand: room.ballInHand, shots: room.shots, groups: room.groups, gameOver: room.gameOver,
     physicsVersion: PHYSICS_VERSION, winner: room.winner, connected, reason: room.reason, sfx: room.sfx,
-    balls: room.balls.map(b => ({ n: b.number, x: rounded(b.x, 2), y: rounded(b.y, 2), p: b.potted, vx: rounded(b.vx, 4), vy: rounded(b.vy, 4), wx: rounded(b.wx, 3), wy: rounded(b.wy, 3), wz: rounded(b.wz, 3) })) };
+    balls: room.balls.map(b => ({
+      n: b.number, x: rounded(b.x, 2), y: rounded(b.y, 2), p: b.potted,
+      vx: rounded(b.vx, 4), vy: rounded(b.vy, 4), wx: rounded(b.wx, 3), wy: rounded(b.wy, 3), wz: rounded(b.wz, 3),
+      q: b.potted ? undefined : b.q?.map(value => rounded(value, 4)),
+    })) };
 }
 function pushState(room) { broadcast(room, state(room)); room.sfx = { b: 0, r: 0, p: 0 }; }
 function finishShot(room) {
@@ -148,8 +152,13 @@ const simulation = setInterval(() => {
   for (const room of rooms.values()) {
     if (!room.shooting) {
       if (room.balls.some(b => !b.potted && Math.abs(b.wz) > 1e-9)) {
-        for (const b of room.balls) if (!b.potted) evolveCloth(b, 1 / 60);
-        if (frame % 3 === 0) pushState(room);
+        let spinning = false;
+        for (const b of room.balls) {
+          if (b.potted || Math.abs(b.wz) <= 1e-9) continue;
+          evolveCloth(b, 1 / 60, true);
+          if (Math.abs(b.wz) > 1e-9) spinning = true;
+        }
+        if (frame % 3 === 0 || !spinning) pushState(room);
         dirty = true;
       }
       continue;

@@ -5,6 +5,7 @@ import {
   CUSHION_FRICTION, CUSHION_NOSE_HEIGHT, BALL_RESTITUTION, MAX_SHOT_SPEED, MAX_TIP_OFFSET,
 } from './config.js';
 import { POCKETS, CUSHION_SEGMENTS, closestOnSegment, pocketAt, validPlacement } from './geometry.js';
+import { REST_ORIENTATION, rotateOrientation } from './orientation.js';
 
 const I = 2 / 5 * M * R * R;
 const EPS = 1e-9;
@@ -44,26 +45,43 @@ export function allStopped(balls) {
   // Axial spin alone cannot translate a ball on a level cloth and need not delay turns.
   return balls.every(b => b.potted || (Math.hypot(b.vx, b.vy) < EPS && Math.hypot(b.wx || 0, b.wy || 0) < EPS));
 }
-export function evolveCloth(b, dt) {
+function decayedSpin(spin, dt) {
+  return Math.sign(spin) * Math.max(0, Math.abs(spin) - SPIN_DECELERATION * dt);
+}
+function orientOnCloth(b, x, y, spin, dt) {
+  if (!x && !y && !spin) return;
+  const t = Math.min(dt, Math.abs(spin) / SPIN_DECELERATION);
+  const z = (spin + decayedSpin(spin, t)) * t / 2;
+  b.q = rotateOrientation(b.q ?? REST_ORIENTATION, x, y, z);
+}
+export function evolveCloth(b, dt, trackOrientation = false) {
   b.wx ||= 0; b.wy ||= 0; b.wz ||= 0;
   const ux = b.vx - R * b.wy, uy = b.vy + R * b.wx, slip = Math.hypot(ux, uy);
   if (slip > EPS) {
     const t = Math.min(dt, 2 * slip / (7 * MU_S * G));
     const ax = -MU_S * G * ux / slip, ay = -MU_S * G * uy / slip;
+    const wx = b.wx, wy = b.wy;
     b.x += (b.vx * t + .5 * ax * t * t) * SCALE;
     b.y -= (b.vy * t + .5 * ay * t * t) * SCALE;
     b.vx += ax * t; b.vy += ay * t;
     b.wx += 2.5 / R * ay * t; b.wy -= 2.5 / R * ax * t;
-    if (dt - t > EPS) roll(b, dt - t);
-  } else roll(b, dt);
-  b.wz = Math.sign(b.wz) * Math.max(0, Math.abs(b.wz) - SPIN_DECELERATION * dt);
+    if (trackOrientation) orientOnCloth(b, (wx + b.wx) * t / 2, (wy + b.wy) * t / 2, b.wz, t);
+    if (dt - t > EPS) roll(b, dt - t, trackOrientation ? decayedSpin(b.wz, t) : null);
+  } else roll(b, dt, trackOrientation ? b.wz : null);
+  b.wz = decayedSpin(b.wz, dt);
 }
-function roll(b, dt) {
+function roll(b, dt, spin) {
   const speed = Math.hypot(b.vx, b.vy);
-  if (speed < EPS) { b.vx = b.vy = b.wx = b.wy = 0; return; }
+  if (speed < EPS) {
+    b.vx = b.vy = b.wx = b.wy = 0;
+    if (spin) orientOnCloth(b, 0, 0, spin, dt);
+    return;
+  }
   const t = Math.min(dt, speed / (MU_R * G)), f = Math.max(0, 1 - MU_R * G * t / speed);
-  b.x += b.vx * t * (1 + f) / 2 * SCALE;
-  b.y -= b.vy * t * (1 + f) / 2 * SCALE;
+  const travelTime = t * (1 + f) / 2;
+  if (spin !== null) orientOnCloth(b, -b.vy * travelTime / R, b.vx * travelTime / R, spin, dt);
+  b.x += b.vx * travelTime * SCALE;
+  b.y -= b.vy * travelTime * SCALE;
   b.vx *= f; b.vy *= f;
   b.wx = -b.vy / R; b.wy = b.vx / R;
 }
@@ -156,7 +174,7 @@ export function step(balls, dt = 1 / 60) {
   for (let n = 0; n < sub; n++) {
     const active = balls.filter(b => !b.potted);
     for (const b of active) {
-      evolveCloth(b, h);
+      evolveCloth(b, h, true);
       if (pocketAt(b.x, b.y)) { b.potted = true; clearMotion(b); potted.push(b); }
       else collideRails(b, hits);
     }
