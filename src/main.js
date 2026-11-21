@@ -1,8 +1,9 @@
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, Graphics, RendererType } from 'pixi.js';
 import { CANVAS_W, CANVAS_H, BALL_R } from './config.js';
 import { powerFromPull, fineAngle, tipFromPoint } from './aiming.js';
 import { rack, step, allStopped, shoot, placeCueExact, clampTip } from './physics.js';
-import { drawTable, buildBallVisual, drawAim, clearAim, drawPlacement, buildCueVisual, initBallTextures } from './scene.js';
+import { drawTable, drawAim, clearAim, drawPlacement, buildCueVisual, createFlatBalls } from './scene.js';
+import { createSphereBalls } from './ball-visual.js';
 import { SnapshotPlayback } from './playback.js';
 import { validPlacement } from './geometry.js';
 import { host, join } from './net.js';
@@ -15,14 +16,14 @@ const other = (p) => (p === 1 ? 2 : 1);
 
 const game = {
   mode: 'solo', myPlayer: 1, turn: 1, started: false,
-  balls: null, cue: null, sprites: null, byNumber: null,
+  balls: null, cue: null, byNumber: null,
   shots: 0, shooting: false, shotPotted: [], cueFoul: false,
   groups: { 1: null, 2: null }, gameOver: false, winner: null,
   net: null, settled: true, cuePotted: false, ballInHand: false, connected: false, room: '',
   sfxBall: 0, sfxRail: 0, sfxPocket: 0,
 };
 
-let app, ballLayer, aimLine, placementLine, cueVisual;
+let app, ballVisuals, aimLine, placementLine, cueVisual;
 const placement = { point: null, valid: false, pointer: null, before: null, pending: false };
 let placementState = '', guideState = '';
 const playback = new SnapshotPlayback();
@@ -42,7 +43,9 @@ async function main() {
   document.getElementById('app').appendChild(app.canvas);
 
   app.stage.addChild(drawTable());
-  ballLayer = new Container();
+  ballVisuals = app.renderer.type === RendererType.WEBGL ? createSphereBalls() : createFlatBalls();
+  const ballLayer = new Container();
+  ballLayer.addChild(...ballVisuals);
   app.stage.addChild(ballLayer);
   aimLine = new Graphics();
   placementLine = new Graphics();
@@ -50,7 +53,6 @@ async function main() {
   cueVisual.visible = false;
   app.stage.addChild(aimLine, cueVisual, placementLine);
 
-  initBallTextures(app.renderer);
   applyStatic();
 
   const fit = () => {
@@ -129,19 +131,19 @@ function renderFrame() {
   const guest = game.mode !== 'solo';
   const now = performance.now(), blend = 1 - Math.exp(-Math.min(100, now - lastRenderAt) / 25);
   lastRenderAt = now;
-  for (const [ball, spr] of game.sprites) {
-    const ownPlacement = game.ballInHand && (game.mode === 'solo' || game.turn === game.myPlayer);
-    const projected = guest && !game.settled ? playback.get(ball.number) : null;
+  const ownPlacement = game.ballInHand && (!guest || game.turn === game.myPlayer);
+  for (const ball of game.balls) {
+    const spr = ballVisuals[ball.number];
+    const remoteBall = guest ? playback.get(ball.number) : null;
+    const projected = guest && !game.settled ? remoteBall : null;
     spr.visible = !ball.potted && !projected?.potted && !(ball.number === 0 && ownPlacement && placement.point);
     if (ball.potted) continue;
     if (guest) {
       ball.x += ((projected?.x ?? ball.tx ?? ball.x) - ball.x) * blend;
       ball.y += ((projected?.y ?? ball.ty ?? ball.y) - ball.y) * blend;
-    } else {
-      const sp = Math.hypot(ball.vx, ball.vy);
-      spr.spin.rotation += (ball.vx >= 0 ? 1 : -1) * sp * 0.04;
     }
     spr.position.set(ball.x, ball.y);
+    if (spr.visible) spr.setOrientation?.(guest ? remoteBall?.q : ball.q);
   }
   renderControls();
 }
@@ -332,19 +334,14 @@ function setupPrecisionControls() {
 function setupRack() {
   playback.clear();
   resetControls(); aim.angle = 0;
-  for (const child of ballLayer.removeChildren()) child.destroy({ children: true });
   game.balls = rack();
-  game.cue = game.balls.find((b) => b.number === 0);
-  game.sprites = new Map();
-  game.byNumber = new Map();
-
+  game.cue = game.balls[0];
+  game.byNumber = new Map(game.balls.map(b => [b.number, b]));
   for (const b of game.balls) {
-    const v = buildBallVisual(b);
-    game.sprites.set(b, v);
-    game.byNumber.set(b.number, { ball: b, spr: v });
-    ballLayer.addChild(v);
-  }
-  for (const b of game.balls) {
+    const visual = ballVisuals[b.number];
+    visual.position.set(b.x, b.y);
+    visual.setOrientation?.();
+    visual.visible = true;
     b.tx = b.x;
     b.ty = b.y;
   }
@@ -527,15 +524,13 @@ function applyState(m) {
   game.ballInHand = m.ballInHand;
 
   for (const bs of m.balls) {
-    const e = game.byNumber.get(bs.n);
-    if (!e) continue;
-    e.spr.spin.rotation += Math.hypot(bs.x - e.ball.tx, bs.y - e.ball.ty) * .025;
-    e.ball.tx = bs.x;
-    e.ball.ty = bs.y;
-    if (m.settled) { e.ball.x = bs.x; e.ball.y = bs.y; }
-    e.ball.potted = bs.p;
-    for (const key of ['vx', 'vy', 'wx', 'wy', 'wz']) e.ball[key] = bs[key] || 0;
-
+    const ball = game.byNumber.get(bs.n);
+    if (!ball) continue;
+    ball.tx = bs.x;
+    ball.ty = bs.y;
+    if (m.settled) { ball.x = bs.x; ball.y = bs.y; }
+    ball.potted = bs.p;
+    for (const key of ['vx', 'vy', 'wx', 'wy', 'wz']) ball[key] = bs[key] || 0;
   }
 
   if (m.sfx && !document.hidden) {

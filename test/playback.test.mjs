@@ -14,3 +14,15 @@ test('a missing packet has a bounded prediction window and the next snapshot is 
   const settled=snapshot(true);settled.balls[0].x=700;settled.balls[0].vx=0;
   playback.accept(settled);playback.tick();assert.equal(playback.get(0).x,700);assert.equal(playback.get(0).vx,0);
 });
+test('settled snapshots preserve surface orientation and allow residual side spin', () => {
+  const playback = new SnapshotPlayback();
+  const resting = { n: 0, x: 280, y: 280, q: [0, 0, .6, .8], p: false };
+  playback.accept({ settled: true, balls: [{ ...resting, wz: .5 }] });
+  playback.tick();
+  assert.ok(playback.get(0).q[2] > .6);
+  assert.equal(playback.get(0).x, 280);
+  assert.deepEqual(resting.q, [0, 0, .6, .8]);
+  playback.accept({ settled: true, balls: [resting] });
+  playback.tick();
+  assert.deepEqual(playback.get(0).q, resting.q);
+});

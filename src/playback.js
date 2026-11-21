@@ -6,9 +6,10 @@ export class SnapshotPlayback {
   constructor() { this.clear(); }
   clear() { this.byNumber = new Map(); this.balls = []; this.active = false; this.frames = 0; }
   accept(state) {
-    this.active = !state.settled; this.frames = 0;
+    this.frames = 0;
     this.balls = state.balls.map(b => ({ number: b.n, x: b.x, y: b.y, potted: b.p,
-      vx: b.vx || 0, vy: b.vy || 0, wx: b.wx || 0, wy: b.wy || 0, wz: b.wz || 0 }));
+      vx: b.vx || 0, vy: b.vy || 0, wx: b.wx || 0, wy: b.wy || 0, wz: b.wz || 0, q: b.q }));
+    this.active = !state.settled || this.balls.some(b => !b.potted && b.wz !== 0);
     this.byNumber = new Map(this.balls.map(b => [b.number, b]));
   }
   tick() {

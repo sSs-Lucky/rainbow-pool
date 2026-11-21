@@ -59,8 +59,7 @@ export function drawTable() {
   return g;
 }
 
-// Canvas textures keep ball colors and stripe whites independent of WebGL gradient alpha.
-let TEX;
+// Static textures for renderers that do not support the WebGL sphere material.
 function ballTexture(number, color) {
   const size = BALL_R * 2 + 8, scale = 5;
   const canvas = document.createElement('canvas');
@@ -90,18 +89,15 @@ function ballTexture(number, color) {
   ctx.fillStyle = 'rgba(255,255,255,.72)'; ctx.fill();
   return Texture.from(canvas);
 }
-export function initBallTextures() {
-  TEX = new Map();
-  for (let n = 0; n <= 15; n++) TEX.set(n, ballTexture(n, BALL_COLORS[n]));
-}
-export function buildBallVisual(ball) {
-  const c = new Container();
-  const shadow = new Graphics().ellipse(2, 3, BALL_R * 1.04, BALL_R * .9).fill({ color: 0x001b14, alpha: .35 });
-  const face = new Sprite(TEX.get(ball.number)); face.anchor.set(.5); face.width = face.height = BALL_R * 2 + 8;
-  // Keep numbers and white stripe caps legible instead of spinning labels under a dark overlay.
-  c.spin = { rotation: 0 };
-  c.addChild(shadow, face);
-  return c;
+export function createFlatBalls() {
+  return BALL_COLORS.map((color, number) => {
+    const visual = new Container();
+    const shadow = new Graphics().ellipse(2, 3, BALL_R * 1.04, BALL_R * .9).fill({ color: 0x001b14, alpha: .35 });
+    const face = new Sprite(ballTexture(number, color));
+    face.anchor.set(.5); face.width = face.height = BALL_R * 2 + 8;
+    visual.addChild(shadow, face);
+    return visual;
+  });
 }
 export function buildCueVisual() {
   const cue = new Container();
