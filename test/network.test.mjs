@@ -6,6 +6,7 @@ import { BALL_R, HEAD_STRING } from '../src/config.js';
 import { POCKETS } from '../src/geometry.js';
 const base = process.env.POOL_TEST_URL || 'http://127.0.0.1:3000';
 const endpoint = base.replace(/^http/, 'ws') + '/ws';
+const browserOrigin = process.env.POOL_TEST_BROWSER_ORIGIN || new URL(base).origin;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 function client(headers) {
   const socket = new WebSocket(endpoint, { headers }); const messages = [];
@@ -91,8 +92,13 @@ test('account cue choices survive login and both seats receive public nicknames 
   assert.deepEqual(await renewed.json(), { profile: { nickname, cue: 'jade' } });
   assert.deepEqual(await (await request('profile', 'GET', null, session)).json(), { profile: null });
 
-  const host = client({ Cookie: loginCookie }), guest = client();
-  t.after(() => { host.socket.terminate(); guest.socket.terminate(); });
+  const host = client({ Cookie: loginCookie, Origin: browserOrigin });
+  const guest = client({ Origin: browserOrigin, 'Sec-Fetch-Site': 'same-site' });
+  const foreign = client({ Origin: 'https://example.com', 'Sec-Fetch-Site': 'same-site' });
+  t.after(() => { for (const peer of [host, guest, foreign]) peer.socket.terminate(); });
+  const rejected = new Promise(resolve => foreign.socket.once('close', resolve));
+  await foreign.opened;
+  assert.equal(await rejected, 1008);
   await Promise.all([host.opened, guest.opened]);
   host.send({ action: 'create' });
   const { code } = await host.wait(m => m.type === 'ready');

@@ -8,6 +8,7 @@ const derive = promisify(scrypt);
 const SESSION_MS = 30 * 24 * 3600_000;
 const WINDOW_MS = 5 * 60_000;
 const COOKIE = 'rainbow_session';
+const publicOrigin = process.env.POOL_PUBLIC_ORIGIN ? new URL(process.env.POOL_PUBLIC_ORIGIN).origin : null;
 const sessionKey = value => createHash('sha256').update(value).digest('hex');
 const publicProfile = account => account ? { nickname: account.nickname, cue: account.cue } : null;
 const randomToken = () => randomBytes(32).toString('hex');
@@ -35,10 +36,17 @@ function cookie(req, token, maxAge) {
 
 export function sameOrigin(req) {
   const site = req.headers['sec-fetch-site'];
-  if (site) return site === 'same-origin' || site === 'none';
-  if (!req.headers.origin) return true;
-  try { return new URL(req.headers.origin).host === req.headers.host; }
-  catch { return false; }
+  const origin = req.headers.origin;
+  if (!origin) return !site || site === 'same-origin' || site === 'none';
+  // A TLS-terminating proxy may rewrite Host or omit Fetch Metadata on WebSocket upgrades.
+  if (publicOrigin) return origin === publicOrigin;
+  if (site === 'cross-site') return false;
+  try {
+    const parsed = new URL(origin);
+    const protocol = req.socket.encrypted ? 'https:' : 'http:';
+    return parsed.host === req.headers.host &&
+      (parsed.protocol === protocol || (parsed.protocol === 'https:' && site === 'same-origin'));
+  } catch { return false; }
 }
 
 function json(res, status, result, headers = {}) {

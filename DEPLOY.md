@@ -19,7 +19,8 @@ npm start
 
 - `PORT`：默认 3000。
 - `HOST`：默认 0.0.0.0；由同机反向代理转发时可以设为 127.0.0.1。
-- `POOL_DATA_DIR`：房间存档目录，默认项目内 .runtime。更新代码时应保留该目录，或使用独立持久目录。
+- `POOL_DATA_DIR`：房间及账号存档目录，默认项目内 .runtime。更新代码时应保留该目录，或使用独立持久目录。
+- `POOL_PUBLIC_ORIGIN`：反向代理提供的公网来源，例如 `https://pool.example.com`。代理终止 TLS 或改写 Host 时，设为浏览器实际访问的协议与域名，用于登录请求和 WebSocket 来源校验。
 
 使用环境变量、宿主平台配置或 systemd EnvironmentFile 设置变量。`.env.example` 可以复制为 `.env` 后通过 `node --env-file=.env server.mjs` 使用；普通 npm start 不自动读取该文件。
 
