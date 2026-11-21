@@ -107,6 +107,43 @@
   #call-bar select,#break-bar button{min-height:29px;padding:3px 6px}
   .in-game.calling #app,.in-game.break-choice #app{bottom:48px}
 }
+#media-toggle,#media-panel,#media-videos{display:none}
+.online-game #media-toggle{display:block}
+.online-game #media-panel:not([hidden]){display:grid}
+.online-game #media-videos:not([hidden]){display:flex}
+#hud #media-toggle.active,#media-panel button[aria-pressed="true"]{border-color:#7ddeab99;color:#c8f9d8;background:#285b416c}
+#media-panel{position:fixed;top:50px;right:max(14px,env(safe-area-inset-right));z-index:14;width:min(262px,calc(100vw - 28px));gap:8px;padding:12px;background:#132c23;border:1px solid #628c76a3;border-radius:13px;box-shadow:0 10px 34px #0008}
+#media-panel .devices{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+#media-panel button{min-height:35px;border:1px solid #587b69;border-radius:8px;background:#203e32;color:#eaf5ec;font-size:12px;padding:6px}
+#media-panel button[hidden]{display:none}
+#media-panel #media-status{color:#adcbba;font-size:11px;line-height:1.5;margin:0}
+.in-game.media-video{
+  --call-video-top:max(50px,calc(env(safe-area-inset-top) + 48px));
+  --call-video-width:clamp(90px,12vw,132px);
+  --call-video-bottom:calc(var(--call-video-top) + var(--call-video-width) * .5625);
+  --call-score-space:0px;
+}
+.in-game.media-video:has(#balls-left .row){--call-score-space:30px}
+#media-videos{position:fixed;top:var(--call-video-top);left:50%;transform:translateX(-50%);z-index:7;gap:8px;pointer-events:none}
+#media-videos figure{position:relative;margin:0;width:var(--call-video-width);aspect-ratio:16/9;border:1px solid #7ba6918f;border-radius:8px;overflow:hidden;background:#122b20;box-shadow:0 4px 14px #0006}
+#media-videos figure[hidden]{display:none}
+#media-videos video{display:block;width:100%;height:100%;object-fit:cover}
+#media-self-video{transform:scaleX(-1)}
+#media-videos figcaption{position:absolute;bottom:3px;left:4px;max-width:calc(100% - 8px);padding:1px 5px;border-radius:4px;background:#05140dd9;color:#eaf6ed;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.in-game.media-video #balls-left{top:calc(var(--call-video-bottom) + 4px)}
+.in-game.media-video #app{top:calc(var(--call-video-bottom) + var(--call-score-space) + 8px)}
+.in-game.media-video #toast{top:calc(var(--call-video-bottom) + var(--call-score-space) + 8px)}
+@media(max-width:850px){
+  .in-game.media-video #media-panel{top:calc(var(--call-video-bottom) + var(--call-score-space) + 8px)}
+}
+@media(max-height:520px) and (orientation:landscape){
+  #media-panel{top:39px;padding:9px}
+  .in-game.media-video{
+    --call-video-top:max(44px,calc(env(safe-area-inset-top) + 42px));
+    --call-video-width:clamp(68px,11vw,88px);
+  }
+  .in-game.media-video:has(#balls-left .row){--call-score-space:28px}
+}
 </style>
 </head>
 <body>
@@ -116,7 +153,18 @@
 <aside id="precision-control" aria-label="精细瞄准与加塞"><span class="precision-title">微调</span><output id="fine-value">0.00°</output><button class="fine-step" id="fine-minus" aria-label="逆时针微调 0.05 度" disabled>−</button><button id="fine-track" type="button" role="slider" aria-label="瞄准角度微调，上下拖动" aria-orientation="vertical" aria-valuemin="-180" aria-valuemax="180" aria-valuenow="0" disabled><span id="fine-handle"></span></button><button class="fine-step" id="fine-plus" aria-label="顺时针微调 0.05 度" disabled>＋</button><span class="precision-foot">上下滑动<br>松手保留方向</span><button id="spin-open" aria-label="设置白球击点与加塞" aria-haspopup="dialog" disabled><span id="spin-dot"></span></button><span id="spin-caption">中杆</span></aside>
 <div id="spin-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="spin-title"><div class="box"><h2 id="spin-title">白球击点</h2><p>点击或拖动红点，选择球杆接触白球的位置。</p><div class="spin-target"><span class="spin-direction top">高杆 · 跟进</span><span class="spin-direction bottom">低杆 · 回拉</span><span class="spin-direction left">左塞</span><span class="spin-direction right">右塞</span><button id="spin-pad" aria-label="白球击点，方向键微调，Home 回中"><span id="spin-pad-dot"></span></button></div><p id="spin-description" aria-live="polite">中杆 · 不加塞</p><p class="spin-help">虚线圈内为可用击点。回拉取决于距离和力度；左右塞主要影响碰球、碰库。</p><div class="row"><button id="spin-reset">回到中杆</button><button class="primary" id="spin-done">确定</button></div></div></div>
 
-<div id="hud"><div class="stats"><span class="pill" id="hud-turn">轮到你</span><span class="pill" id="hud-group">全色球</span><span class="pill"><span data-i18n="shots">击球</span> <b id="hud-shots">0</b></span><span class="pill"><span data-i18n="potted">进球</span> <b id="hud-potted">0/7</b></span><span id="connection"></span><span id="hud-players" hidden></span></div><div class="actions"><button id="call-safety" type="button" aria-pressed="false" hidden>防守杆</button><button id="btn-mute" aria-label="切换声音" title="切换声音">🔇</button><button id="btn-fullscreen" title="全屏">全屏</button><button id="btn-restart" data-i18n="restart">再来一局</button><button id="btn-menu" data-i18n="menu">退出</button></div></div>
+<div id="hud"><div class="stats"><span class="pill" id="hud-turn">轮到你</span><span class="pill" id="hud-group">全色球</span><span class="pill"><span data-i18n="shots">击球</span> <b id="hud-shots">0</b></span><span class="pill"><span data-i18n="potted">进球</span> <b id="hud-potted">0/7</b></span><span id="connection"></span><span id="hud-players" hidden></span></div><div class="actions"><button id="call-safety" type="button" aria-pressed="false" hidden>防守杆</button><button id="media-toggle" type="button" aria-expanded="false" aria-controls="media-panel">通话</button><button id="btn-mute" aria-label="切换游戏音效" title="切换游戏音效">🔇</button><button id="btn-fullscreen" title="全屏">全屏</button><button id="btn-restart" data-i18n="restart">再来一局</button><button id="btn-menu" data-i18n="menu">退出</button></div></div>
+<section id="media-panel" aria-label="语音与视频" hidden>
+  <div class="devices"><button id="media-audio" type="button" aria-pressed="false" disabled>开启麦克风</button><button id="media-video" type="button" aria-pressed="false" disabled>开启摄像头</button></div>
+  <p id="media-status" role="status"></p>
+  <button id="media-play-audio" type="button" hidden>播放对方声音</button>
+  <button id="media-retry" type="button" hidden>重试通话连接</button>
+</section>
+<div id="media-videos" hidden>
+  <figure id="media-remote" hidden><video id="media-remote-video" autoplay muted playsinline></video><figcaption id="media-remote-label">对手</figcaption></figure>
+  <figure id="media-self" hidden><video id="media-self-video" autoplay muted playsinline></video><figcaption id="media-self-label">你</figcaption></figure>
+</div>
+<audio id="media-remote-audio" autoplay></audio>
 <div id="placement-bar"><span id="placement-status" role="status"></span><button id="btn-place-confirm" disabled>确认摆球</button></div>
 <div id="call-bar" aria-label="黑 8 袋口" hidden>
   <label>黑 8 袋口 <select id="call-pocket">

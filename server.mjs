@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes, randomInt } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createAccounts, sameOrigin } from './accounts.mjs';
+import { roomMedia } from './room-media.mjs';
 import { rack, step, allStopped, shoot, placeCueExact, clampTip, evolveCloth } from './src/physics.js';
 import { adjudicateShot, BREAK_CHOICES, isOnEight, otherPlayer, validateEightCall } from './src/shot-rules.js';
 import { POCKETS, pocketAt } from './src/geometry.js';
@@ -22,6 +23,7 @@ const send = (ws, msg) => {
   if (msg.type === 'state' && !msg.settled && ws.bufferedAmount > 16384) return;
   ws.send(JSON.stringify(msg));
 };
+const media = roomMedia(send, WebSocket.OPEN);
 const rounded = (n, digits) => Number(n.toFixed(digits));
 const token = () => randomBytes(20).toString('hex');
 const code = () => randomBytes(4).toString('hex').slice(0, 6).toUpperCase();
@@ -124,6 +126,7 @@ function attach(ws, room, player, profile) {
   if (!room.started && room.sockets[1] && room.sockets[2]) room.started = true;
   if (room.started) broadcast(room, { type: 'start', groups: room.groups, turn: room.turn });
   pushState(room);
+  media.refresh(room);
 }
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.txt': 'text/plain; charset=utf-8' };
 const server = http.createServer((req, res) => {
@@ -143,15 +146,22 @@ const server = http.createServer((req, res) => {
     if (req.method === 'HEAD') res.end(); else fs.createReadStream(file).pipe(res);
   });
 });
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 32 * 1024 });
 wss.on('connection', (ws, req) => {
   if (!sameOrigin(req)) { ws.close(1008, 'origin'); return; }
-  ws.alive = true; ws.rateAt = Date.now(); ws.count = 0;
+  ws.alive = true; ws.rateAt = Date.now(); ws.count = 0; ws.rtcCount = 0;
   ws.on('pong', () => { ws.alive = true; });
   ws.on('message', raw => {
-    if (Date.now() - ws.rateAt > 1000) { ws.rateAt = Date.now(); ws.count = 0; }
+    if (Date.now() - ws.rateAt > 1000) { ws.rateAt = Date.now(); ws.count = 0; ws.rtcCount = 0; }
+    let m; try { m = JSON.parse(raw); } catch {}
+    if (m?.type === 'rtc') {
+      if (++ws.rtcCount > 90) { ws.close(1008, 'rate limit'); return; }
+      if (ws.room?.started) media.relay(ws, m);
+      return;
+    }
     if (++ws.count > 45) { ws.close(1008, 'rate limit'); return; }
-    let m; try { m = JSON.parse(raw); } catch { fail(ws, 'invalid'); return; }
+    if (raw.length > 4096) { ws.close(1009, 'message too large'); return; }
+    if (m === undefined) { fail(ws, 'invalid'); return; }
     if (!m || typeof m !== 'object') return;
     if (m.action === 'create' && !ws.room) {
       if (rooms.size >= 64) { fail(ws, 'busy'); return; }
@@ -213,7 +223,9 @@ wss.on('connection', (ws, req) => {
   ws.on('error', () => {});
   ws.on('close', () => {
     const room = ws.room;
-    if (room && room.sockets[ws.player] === ws) { delete room.sockets[ws.player]; room.updated = Date.now(); dirty = true; pushState(room); }
+    if (room && room.sockets[ws.player] === ws) {
+      delete room.sockets[ws.player]; room.updated = Date.now(); dirty = true; pushState(room); media.refresh(room);
+    }
   });
 });
 let frame = 0;

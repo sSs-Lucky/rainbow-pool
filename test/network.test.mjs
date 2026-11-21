@@ -62,6 +62,44 @@ async function place(c, x, y, confirm = true) {
   return state(c, m => m.ballInHand === !confirm && !m.cuePotted && m.balls[0].x === x && m.balls[0].y === y);
 }
 
+test('call signals stay between current seats and stale signals are dropped after a retry or reconnect', { timeout: 12000 }, async t => {
+  const { host, guest, make, reconnect } = await connectMatch(t);
+  const current = client => client.wait(m => m.type === 'rtcReady' && m.session);
+  const room = await current(host);
+  assert.equal((await current(guest)).session, room.session);
+  assert.equal(room.keepDevices, false);
+  const signal = { type: 'rtc', kind: 'media', session: room.session, audio: true, video: false };
+  const outsider = make();
+  await outsider.opened;
+  outsider.send({ action: 'create' });
+  await outsider.wait(m => m.type === 'ready');
+  outsider.send({ ...signal, video: true });
+  // Only the first seat may offer, and a larger SDP must not hit the gameplay message size limit.
+  guest.send({ type: 'rtc', kind: 'description', session: room.session, description: { type: 'offer', sdp: 'invalid seat' } });
+  host.send(signal);
+  await guest.wait(m => m.type === 'rtc' && m.kind === 'media');
+  const offer = { type: 'offer', sdp: 'v=0\r\n' + 'a=sendrecv\r\n'.repeat(400) };
+  host.send({ type: 'rtc', kind: 'description', session: room.session, description: offer });
+  assert.deepEqual((await guest.wait(m => m.type === 'rtc' && m.kind === 'description')).description, offer);
+  assert.equal(host.messages.some(m => m.type === 'rtc'), false);
+  assert.equal(outsider.messages.some(m => m.type === 'rtc'), false);
+
+  guest.send({ type: 'rtc', kind: 'retry', session: room.session });
+  const retried = await host.wait(m => m.type === 'rtcReady' && m.session && m.session !== room.session);
+  assert.equal(retried.keepDevices, true, 'retries keep devices for the same two seats');
+  await guest.wait(m => m.type === 'rtcReady' && m.session === retried.session);
+  host.send({ ...signal, video: true });
+  host.send({ ...signal, session: retried.session, audio: false });
+  await guest.wait(m => m.type === 'rtc' && m.session === retried.session);
+  assert.equal(guest.messages.some(m => m.type === 'rtc' && m.video), false);
+
+  const returned = await reconnect(2);
+  const next = await current(returned);
+  assert.notEqual(next.session, retried.session);
+  assert.equal(next.keepDevices, false, 'a seat reconnect requires enabling capture again');
+  await host.wait(m => m.type === 'rtcReady' && m.session === next.session);
+});
+
 test('account cue choices survive login and both seats receive public nicknames and cue styles', { timeout: 15000 }, async t => {
   const nickname = '练球' + randomBytes(5).toString('hex');
   const password = randomBytes(16).toString('hex');

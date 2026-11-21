@@ -34,6 +34,16 @@ npm start
 
 [deploy/nginx.conf.example](../deploy/nginx.conf.example) 给出同源反向代理示例；更换域名和端口，并使用平台或现有证书方案配置 HTTPS。模板的 map 和 server 应放在 Nginx 的 http 上下文中。
 
+## 双人通话
+
+浏览器通过同一个 `/ws` 交换 WebRTC 信令，音视频由双方浏览器直接传输，必要时由 TURN 中继。RainBow 游戏进程不接收或保存音视频。公网页面需要通过 HTTPS 提供，本机可以使用回环地址。
+
+- `POOL_STUN_URLS`：逗号分隔的 STUN 地址，默认 `stun:stun.l.google.com:19302`。设为空字符串可仅使用本地候选。
+- `POOL_TURN_URLS`：可选，逗号分隔的 `turn:` 或 `turns:` 地址。
+- `POOL_TURN_SECRET`：配合 coturn `use-auth-secret` 的服务器端共享密钥。游戏进程只给已入座的玩家签发临时凭据。
+
+不同运营商或企业网络有时无法直接建立通话。使用 TURN 时，中继服务需要能从两端网络访问，并允许其配置的中继端口。可参考 [WebRTC TURN 说明](https://webrtc.org/getting-started/turn-server) 和 [coturn 配置示例](https://github.com/coturn/coturn/blob/master/examples/etc/turnserver.conf)。
+
 ## 验证
 
 ```sh
