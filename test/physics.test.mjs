@@ -76,14 +76,29 @@ test('raised-nose cushion changes side-spin rebound symmetrically and never crea
   }
 });
 test('six pocket openings admit balls, while jaws reject grazing shots', () => {
-  for(const p of POCKETS) {
-    const d=Math.hypot(p.dx,p.dy),b=ball(p.x-p.dx/d*100,p.y-p.dy/d*100);shoot(b,p.dx,p.dy,.3);
-    for(let i=0;i<180&&!b.potted;i++)step([b]);assert.ok(b.potted,`pocket ${p.x},${p.y}`);
+  for (const p of POCKETS) {
+    const length = Math.hypot(p.dx, p.dy), dx = p.dx / length, dy = p.dy / length;
+    const centerX = p.x - dx * 100, centerY = p.y - dy * 100;
+    const clean = ball(centerX, centerY);
+    shoot(clean, dx, dy, .3);
+    for (let i = 0; i < 180 && !clean.potted; i++) step([clean]);
+    assert.ok(clean.potted, `center of pocket ${p.x},${p.y}`);
+
+    // These paths were accepted by the wider jaws. Check both lips of each pocket.
+    const offset = p.dx === 0 ? 16 : 12;
+    for (const sign of [-1, 1]) {
+      const grazing = ball(centerX - dy * offset * sign, centerY + dx * offset * sign);
+      shoot(grazing, dx, dy, .3);
+      let rail = false;
+      for (let i = 0; i < 600 && !allStopped([grazing]); i++) {
+        const { hits } = step([grazing]);
+        rail ||= hits.some(hit => hit.type === 'rail');
+      }
+      assert.ok(rail, `cushion contact at pocket ${p.x},${p.y}`);
+      assert.equal(grazing.potted, false, `grazing shot at pocket ${p.x},${p.y}`);
+    }
   }
-  assert.equal(CUSHION_SEGMENTS.filter(s=>s.jaw).length,12);
-  const b=ball(506,100);shoot(b,0,-1,.3);let jaw=false;
-  for(let i=0;i<60;i++){const r=step([b]);jaw ||= r.hits.some(h=>h.jaw);}
-  assert.ok(!b.potted);assert.ok(jaw,'sloped mouth face must participate in collision');
+  assert.equal(CUSHION_SEGMENTS.filter(s => s.jaw).length, 12);
 });
 test('break settles, all live balls stay on cloth or in a pocket channel, placement is safe', () => {
   const balls=rack();shoot(balls[0],1,.04,1,{x:.2,y:-.3});let frames=0;

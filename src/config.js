@@ -8,7 +8,8 @@ export const HEAD_STRING = CUSHION + TABLE_W / 4;
 export const FOOT_SPOT = CUSHION + TABLE_W * 3 / 4;
 
 export const BALL_R = 12;
-export const POCKET_R = 22;
+export const POCKET_R = 18;
+export const POCKET_CAPTURE_R = POCKET_R - 5;
 
 // Physical values use SI units. Screen positions use pixels (see PHYSICS.md).
 export const PHYSICS_VERSION = 3;
