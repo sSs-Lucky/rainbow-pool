@@ -72,6 +72,16 @@ export function updateTurn(mode, mine, ballInHand = false, breaking = false, dec
   e.style.background = mine ? 'rgba(70,220,140,.28)' : 'rgba(220,90,90,.28)';
 }
 
+export function updatePlayers(players, myPlayer) {
+  const me = players[myPlayer], opponent = players[myPlayer === 1 ? 2 : 1];
+  const label = el('hud-players');
+  const text = me || opponent ? `${me?.nickname ?? '你'} · ${opponent?.nickname ?? '对手'}` : '';
+  if (label.textContent === text) return;
+  label.textContent = text;
+  label.title = text;
+  label.hidden = !text;
+}
+
 export function updateGroup(mode, group) {
   const g = el('hud-group');
   g.toggleAttribute('data-open', mode !== 'solo' && !group);

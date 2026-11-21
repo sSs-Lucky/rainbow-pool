@@ -12,18 +12,22 @@ import { host, join } from './net.js';
 import * as ui from './ui.js';
 import * as audio from './audio.js';
 import { t, applyStatic } from './i18n.js';
+import { DEFAULT_CUE, cueStyle, colorHex, isCueStyle } from './cue-styles.js';
+import { setupProfile } from './profile.js';
 
 const game = {
   mode: 'solo', myPlayer: 1, turn: 1, started: false,
   balls: null, cue: null, byNumber: null,
   shots: 0, shooting: false, shotPotted: [], cueFoul: false,
   groups: { 1: null, 2: null }, gameOver: false, winner: null,
-  net: null, settled: true, cuePotted: false, ballInHand: false, connected: false, room: '',
+  net: null, settled: true, cuePotted: false, ballInHand: false, connected: false, room: '', players: {},
   breaking: false, breakDecision: null, placementZone: 'table',
   sfxBall: 0, sfxRail: 0, sfxPocket: 0,
 };
 
 let app, ballVisuals, aimLine, placementLine, callMarks, cueVisual;
+const cueModels = new Map();
+let account = null, visibleCueId;
 const CUE_MARGIN = 74;
 let cueBounds, cueStroke = null;
 const placement = { point: null, valid: false, pointer: null, before: null, pending: false };
@@ -61,7 +65,7 @@ async function main() {
   aimLine = new Graphics();
   placementLine = new Graphics();
   callMarks = new Graphics();
-  cueVisual = buildCueVisual();
+  cueVisual = new Container();
   cueVisual.visible = false;
   app.stage.addChild(drawTable(), cueVisual, ballLayer, aimLine, placementLine, callMarks);
 
@@ -98,6 +102,16 @@ async function main() {
   app.ticker.add(renderFrame);
 
   wireMenu();
+  setupProfile(profile => {
+    account = profile;
+    const shaft = profile?.cue && profile.cue !== DEFAULT_CUE ? colorHex(cueStyle(profile.cue).shaft) : '#3eb9d7';
+    ui.el('power-stick').style.setProperty('--power-cue', shaft);
+  }, id => {
+    const target = buildCueVisual(id);
+    const canvas = app.renderer.extract.canvas({ target, resolution: 2, antialias: true });
+    target.destroy({ children: true });
+    return canvas;
+  });
   ui.el('menu').classList.remove('booting');
   ui.el('boot-status').classList.add('hidden');
 
@@ -183,6 +197,20 @@ function resetControls() {
   placement.point = null; placement.pointer = null; placement.valid = false; placement.pending = false;
   placementState = ''; guideState = '';
 }
+
+function showCueStyle(id) {
+  const style = isCueStyle(id) ? id : DEFAULT_CUE;
+  if (style === visibleCueId) return;
+  if (!cueModels.has(style)) cueModels.set(style, buildCueVisual(style));
+  cueVisual.removeChildren();
+  cueVisual.addChild(cueModels.get(style));
+  visibleCueId = style;
+}
+
+function playerCue(player) {
+  return game.mode === 'solo' ? account?.cue ?? DEFAULT_CUE : game.players[player]?.cue ?? DEFAULT_CUE;
+}
+
 function renderControls() {
   const inGame = document.body.classList.contains('in-game');
   const now = performance.now();
@@ -215,6 +243,7 @@ function renderControls() {
     lastAimSent = now;
   }
   if (cueVisual.visible) {
+    showCueStyle(cueStroke?.style ?? playerCue(opponentReady ? game.turn : game.myPlayer));
     const pos = cueStroke?.position ?? game.cue;
     const gap = strokeFrame?.gap ?? cueAimGap(power, cueTravel(pos, angle, cueBounds));
     const { x, y } = cuePose(pos, angle, tip, gap);
@@ -247,7 +276,7 @@ function strike() {
   const position = { x: game.cue.x, y: game.cue.y }, angle = aim.angle;
   cueStroke = {
     ...startCueStroke(performance.now(), aim.power, cueTravel(position, angle, cueBounds)),
-    position, angle, power: Math.pow(aim.power, 1.35), tip: aim.tip, call, hit: false,
+    position, angle, power: Math.pow(aim.power, 1.35), tip: aim.tip, call, hit: false, style: playerCue(game.myPlayer),
   };
   aim.power = 0; aim.pointer = null;
   aim.tip = { x: 0, y: 0 }; ui.el('spin-modal').classList.remove('show');
@@ -591,6 +620,8 @@ function stopBanners() {
 }
 
 function applyState(m) {
+  game.players = m.players ?? {};
+  ui.updatePlayers(game.players, game.myPlayer);
   if (game.started && game.settled && !m.settled && m.shots > game.shots && m.turn !== game.myPlayer) {
     const white = m.balls.find(ball => ball.n === 0);
     const speed = Math.hypot(white.vx, white.vy);
@@ -600,7 +631,7 @@ function applyState(m) {
       const power = opponentAim.power || Math.min(1, speed / MAX_SHOT_SPEED);
       cueStroke = {
         ...startCueStroke(now, power, cueTravel(position, angle, cueBounds)),
-        impactAt: now, position, angle, tip: opponentAim.tip, hit: true,
+        impactAt: now, position, angle, tip: opponentAim.tip, hit: true, style: playerCue(m.turn),
       };
     }
   }
@@ -724,6 +755,8 @@ function setupInput() {
 function closeNet() {
   playback.clear();
   cueStroke = null;
+  game.players = {};
+  ui.updatePlayers(game.players, game.myPlayer);
   resetControls();
   if (game.net) {
     game.net.close();

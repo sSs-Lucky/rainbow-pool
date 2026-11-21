@@ -3,6 +3,7 @@ import { CANVAS_W, CANVAS_H, CUSHION, HEAD_STRING, TABLE_W, TABLE_H, BALL_R, POC
 import { pocketPositions } from './physics.js';
 import { predictDirections } from './aiming.js';
 import { CUSHION_POLYGONS } from './geometry.js';
+import { cueStyle } from './cue-styles.js';
 
 export function drawTable() {
   const g = new Graphics();
@@ -99,7 +100,8 @@ export function createFlatBalls() {
     return visual;
   });
 }
-export function buildCueVisual() {
+export function buildCueVisual(styleId) {
+  const { shaft, body, grip, inlay, ring, pattern } = cueStyle(styleId);
   const cue = new Container();
   const gradient = stops => new FillGradient({
     type: 'linear', start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: 'local',
@@ -108,26 +110,56 @@ export function buildCueVisual() {
   const shadow = new Graphics().poly([-352, 3, -344, 13, -4, 5, 0, 2]).fill({ color: 0x00120f, alpha: .38 });
   const stick = new Graphics();
   stick.poly([-347, -7, -347, 7, -10, 2.4, -10, -2.4])
-    .fill(gradient([[0, 0x101926], [.32, 0x59748f], [.5, 0x293d52], [.76, 0x142432], [1, 0x090e18]]));
+    .fill(gradient([[0, 0x101926], [.32, shaft], [.5, pattern ? shaft : 0x293d52], [.76, 0x142432], [1, 0x090e18]]));
   stick.poly([-239, -5.3, -239, 5.3, -95, 3.5, -95, -3.5])
-    .fill(gradient([[0, 0x252149], [.32, 0x7561a2], [.53, 0x302d60], [.81, 0x26304e], [1, 0x151a2e]]));
-  stick.poly([-178, -.5, -205, -3.2, -231, -.5, -205, 3.2]).fill(0x60cde7);
-  stick.poly([-190, -.5, -205, -1.8, -220, -.5, -205, 1.8]).fill(0xe7fbff);
-  stick.poly([-336, -6.8, -336, 6.8, -251, 5.5, -251, -5.5]).fill(0x111925);
+    .fill(gradient([[0, 0x252149], [.32, body], [.53, pattern ? body : 0x302d60], [.81, 0x26304e], [1, 0x151a2e]]));
+  drawCueInlay(stick, pattern, inlay);
+  stick.poly([-336, -6.8, -336, 6.8, -251, 5.5, -251, -5.5]).fill(grip);
   for (let x = -333; x <= -260; x += 5) {
-    stick.moveTo(x, -4.8).lineTo(x + 4, 0).lineTo(x, 4.8);
+    if (pattern === 'grain') stick.moveTo(x - 2, -4.2).lineTo(x + 8, -1).lineTo(x + 12, 4.4);
+    else stick.moveTo(x, -4.8).lineTo(x + 4, 0).lineTo(x, 4.8);
   }
-  stick.stroke({ color: 0x8396b5, width: .9, alpha: .55 });
-  const metal = gradient([[0, 0x536585], [.33, 0xf2f6f5], [.63, 0x85a7bc], [1, 0x263656]]);
+  stick.stroke({ color: pattern === 'grain' ? 0x60341b : 0x8396b5, width: .9, alpha: .55 });
+  const metal = gradient([[0, 0x536585], [.33, 0xf2f6f5], [.63, ring ?? 0x85a7bc], [1, 0x263656]]);
   for (const [x, radius, width] of [[-348, 7, 11], [-255, 5.8, 6], [-242, 5.5, 3], [-99, 3.7, 6], [-17, 2.65, 12]]) {
     stick.roundRect(x, -radius, width, radius * 2, 1.2).fill(metal);
   }
-  stick.rect(-246, -5.4, 3, 10.8).fill(0x86bcff);
+  stick.rect(-246, -5.4, 3, 10.8).fill(ring ?? 0x86bcff);
   stick.moveTo(-93, -1.9).lineTo(-18, -1).stroke({ color: 0xd5f7ff, width: .95, alpha: .86 });
-  stick.roundRect(-5, -2.5, 5, 5, 1.4).fill(0x4ebedc);
+  stick.roundRect(-5, -2.5, 5, 5, 1.4).fill(pattern ? inlay : 0x4ebedc);
   stick.moveTo(-3.5, -1.35).lineTo(-.8, -1.35).stroke({ color: 0xabf4ff, width: .8 });
   cue.addChild(shadow, stick);
   return cue;
+}
+
+function drawCueInlay(stick, pattern, color) {
+  switch (pattern) {
+    case 'grain':
+      for (const y of [-2.3, -.5, 1.4, 2.7]) {
+        stick.moveTo(-234, y).quadraticCurveTo(-163, y - 1.9, -111, y * .65);
+      }
+      stick.stroke({ color, width: .65, alpha: .85 });
+      break;
+    case 'points':
+      stick.poly([-233, -3.45, -233, -.45, -113, -1.6]).fill(0xf9ebe8);
+      stick.poly([-233, .45, -233, 3.45, -143, 1.6]).fill(color);
+      break;
+    case 'diamonds':
+      for (const x of [-217, -187, -157, -127]) stick.poly([x - 10, 0, x, -3, x + 10, 0, x, 3]).fill(color);
+      break;
+    case 'waves':
+      for (const x of [-228, -202, -176, -150, -124]) {
+        stick.moveTo(x, -2).quadraticCurveTo(x + 13, 3.6, x + 24, -1.7);
+      }
+      stick.stroke({ color, width: 1.05 });
+      break;
+    case 'windows':
+      for (const x of [-226, -200, -174, -148, -122]) stick.roundRect(x, -2.2, 13, 4.4, 1.4).fill(color);
+      break;
+    default:
+      stick.poly([-178, -.5, -205, -3.2, -231, -.5, -205, 3.2]).fill(color);
+      stick.poly([-190, -.5, -205, -1.8, -220, -.5, -205, 1.8]).fill(0xe7fbff);
+  }
 }
 function dashedLine(g, x1, y1, x2, y2, color, alpha = .8) {
   const len = Math.hypot(x2 - x1, y2 - y1), dx = (x2 - x1) / len, dy = (y2 - y1) / len;

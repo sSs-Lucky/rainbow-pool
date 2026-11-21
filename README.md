@@ -2,6 +2,8 @@
 
 支持手机横屏的中文台球游戏，采用俯视球桌和三维球面。创建球桌、分享链接，两位玩家无需注册即可对打，也可以单人练球。
 
+用昵称和密码注册后，可以在首页从六款球杆里选择。账号会记住上次选中的款式，双人房会显示入座时的昵称和球杆。
+
 [在线体验](https://3000-agq2udpq7t7yj3auet7yeeg4fy.instabox.tech/) · [更新日志](CHANGELOG.md) · [物理模型](PHYSICS.md) · [部署说明](DEPLOY.md) · [参与贡献](CONTRIBUTING.md)
 
 示例部署使用免费云主机，可能休眠或暂时不可用。可以按下文自行部署。
@@ -96,7 +98,7 @@ POOL_TEST_URL=http://127.0.0.1:3000 npm run test:network
 
 可通过宿主环境或服务管理器设置变量。也可以复制 `.env.example` 为 `.env`，使用 `node --env-file=.env server.mjs` 启动；普通 `npm start` 不会自动加载 `.env`。
 
-`.runtime` 包含房间状态和席位凭据，已排除在 Git 之外。个人部署记录使用本地 `deployment.json`，公开仓库只提供 `deployment.example.json`。存档格式当前为物理版本 3；未来物理格式升级可能需要重摆旧球桌。
+`.runtime` 包含房间状态、席位凭据和账号存档，已排除在 Git 之外。迁移部署时保留整个数据目录。个人部署记录使用本地 `deployment.json`，公开仓库只提供 `deployment.example.json`。房间存档当前为物理版本 3，未来物理格式升级可能需要重摆旧球桌。
 
 ## 项目结构
 

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, randomInt } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
+import { createAccounts, sameOrigin } from './accounts.mjs';
 import { rack, step, allStopped, shoot, placeCueExact, clampTip, evolveCloth } from './src/physics.js';
 import { adjudicateShot, BREAK_CHOICES, isOnEight, otherPlayer, validateEightCall } from './src/shot-rules.js';
 import { POCKETS, pocketAt } from './src/geometry.js';
@@ -12,6 +13,7 @@ const base = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(base, 'dist');
 const dataDir = process.env.POOL_DATA_DIR || path.join(base, '.runtime');
 fs.mkdirSync(dataDir, { recursive: true });
+const accounts = createAccounts(dataDir);
 const savePath = path.join(dataDir, 'rooms.json');
 const rooms = new Map();
 const send = (ws, msg) => {
@@ -71,7 +73,7 @@ function state(room) {
   return { type: 'state', turn: room.turn, settled: !room.shooting, cuePotted: room.balls[0].potted,
     ballInHand: room.ballInHand, shots: room.shots, groups: room.groups, gameOver: room.gameOver,
     breaking: room.breaking, breakDecision: room.breakDecision, placementZone: room.placementZone,
-    physicsVersion: PHYSICS_VERSION, winner: room.winner, connected, reason: room.reason, sfx: room.sfx,
+    physicsVersion: PHYSICS_VERSION, winner: room.winner, connected, reason: room.reason, sfx: room.sfx, players: room.players,
     balls: room.balls.map(b => ({
       n: b.number, x: rounded(b.x, 2), y: rounded(b.y, 2), p: b.potted,
       vx: rounded(b.vx, 4), vy: rounded(b.vy, 4), wx: rounded(b.wx, 3), wy: rounded(b.wy, 3), wz: rounded(b.wz, 3),
@@ -112,7 +114,9 @@ function decideBreak(room, choice) {
   room.updated = Date.now(); dirty = true; pushState(room);
 }
 function fail(ws, value) { send(ws, { type: 'error', code: value }); }
-function attach(ws, room, player) {
+function attach(ws, room, player, profile) {
+  room.players ??= {};
+  if (!Object.hasOwn(room.players, player)) room.players[player] = profile;
   const old = room.sockets[player];
   if (old && old !== ws) { old.room = null; old.close(4001, 'replaced'); }
   room.sockets[player] = ws; ws.room = room; ws.player = player; room.updated = Date.now(); dirty = true;
@@ -127,6 +131,7 @@ const server = http.createServer((req, res) => {
   try { pathname = decodeURIComponent(new URL(req.url, 'http://local').pathname); }
   catch { res.writeHead(400); res.end(); return; }
   if (pathname === '/health') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end('{"ok":true}'); return; }
+  if (pathname.startsWith('/api/')) { accounts.handle(req, res, pathname); return; }
   const file = pathname === '/LICENSE' ? path.join(base, 'LICENSE') : path.resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
   if (file !== path.join(base, 'LICENSE') && !file.startsWith(root + path.sep)) { res.writeHead(403); res.end(); return; }
   if (!['GET', 'HEAD'].includes(req.method)) { res.writeHead(405); res.end(); return; }
@@ -139,7 +144,8 @@ const server = http.createServer((req, res) => {
   });
 });
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 4096 });
-wss.on('connection', ws => {
+wss.on('connection', (ws, req) => {
+  if (!sameOrigin(req)) { ws.close(1008, 'origin'); return; }
   ws.alive = true; ws.rateAt = Date.now(); ws.count = 0;
   ws.on('pong', () => { ws.alive = true; });
   ws.on('message', raw => {
@@ -151,7 +157,7 @@ wss.on('connection', ws => {
       if (rooms.size >= 64) { fail(ws, 'busy'); return; }
       let id; do { id = code(); } while (rooms.has(id));
       const room = { code: id, tokens: { 1: token(), 2: null }, sockets: {}, updated: Date.now(), started: false };
-      reset(room); rooms.set(id, room); attach(ws, room, 1); return;
+      reset(room); rooms.set(id, room); attach(ws, room, 1, accounts.profileFor(req)); return;
     }
     if (m.action === 'join' && !ws.room) {
       const room = rooms.get(String(m.code || '').toUpperCase());
@@ -161,7 +167,7 @@ wss.on('connection', ws => {
         if (room.tokens[2]) { fail(ws, 'full'); return; }
         player = 2; room.tokens[2] = token();
       }
-      attach(ws, room, player); return;
+      attach(ws, room, player, accounts.profileFor(req)); return;
     }
     const room = ws.room;
     if (!room?.started) return;

@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import { WebSocket } from 'ws';
 import { BALL_R, HEAD_STRING } from '../src/config.js';
 import { POCKETS } from '../src/geometry.js';
 const base = process.env.POOL_TEST_URL || 'http://127.0.0.1:3000';
 const endpoint = base.replace(/^http/, 'ws') + '/ws';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-function client() {
-  const socket = new WebSocket(endpoint); const messages = [];
+function client(headers) {
+  const socket = new WebSocket(endpoint, { headers }); const messages = [];
   socket.on('message', raw => messages.push(JSON.parse(raw)));
   const opened = new Promise((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject); });
   async function wait(predicate, timeout = 15000, after = 0) {
@@ -59,6 +60,51 @@ async function place(c, x, y, confirm = true) {
   c.send({ type: 'place', x, y, confirm });
   return state(c, m => m.ballInHand === !confirm && !m.cuePotted && m.balls[0].x === x && m.balls[0].y === y);
 }
+
+test('account cue choices survive login and both seats receive public nicknames and cue styles', { timeout: 15000 }, async t => {
+  const nickname = '练球' + randomBytes(5).toString('hex');
+  const password = randomBytes(16).toString('hex');
+  const credentials = { nickname, password };
+  const request = (route, method, body, session, extra = {}) => fetch(base + '/api/' + route, {
+    method, body: body && JSON.stringify(body), headers: {
+      'X-Rainbow-Request': '1', 'Content-Type': 'application/json',
+      ...(session ? { Cookie: session } : {}), ...extra,
+    },
+  });
+  assert.deepEqual(await (await request('profile', 'GET')).json(), { profile: null });
+  assert.equal((await request('profile', 'PATCH', { cue: 'jade' })).status, 401);
+  assert.equal((await request('register', 'POST', credentials, null, { Origin: 'https://example.com' })).status, 403);
+  const registered = await request('register', 'POST', credentials);
+  assert.equal(registered.status, 201);
+  const sessionCookie = registered.headers.get('set-cookie');
+  assert.match(sessionCookie, /HttpOnly; SameSite=Strict/);
+  const session = sessionCookie.split(';')[0];
+  assert.deepEqual(await registered.json(), { profile: { nickname, cue: 'aurora' } });
+  assert.equal((await request('register', 'POST', credentials)).status, 409);
+  assert.equal((await request('login', 'POST', { nickname, password: password + 'x' })).status, 401);
+  assert.equal((await request('profile', 'PATCH', { cue: 'constructor' }, session)).status, 400);
+  assert.deepEqual(await (await request('profile', 'PATCH', { cue: 'jade' }, session)).json(),
+    { profile: { nickname, cue: 'jade' } });
+  const renewed = await request('login', 'POST', credentials, session);
+  const loginCookie = renewed.headers.get('set-cookie').split(';')[0];
+  assert.notEqual(loginCookie, session);
+  assert.deepEqual(await renewed.json(), { profile: { nickname, cue: 'jade' } });
+  assert.deepEqual(await (await request('profile', 'GET', null, session)).json(), { profile: null });
+
+  const host = client({ Cookie: loginCookie }), guest = client();
+  t.after(() => { host.socket.terminate(); guest.socket.terminate(); });
+  await Promise.all([host.opened, guest.opened]);
+  host.send({ action: 'create' });
+  const { code } = await host.wait(m => m.type === 'ready');
+  guest.send({ action: 'join', code, nickname: '假冒账号', cue: 'ocean' });
+  for (const seat of [host, guest]) {
+    const match = await state(seat, m => m.connected.length === 2);
+    assert.deepEqual(match.players, { 1: { nickname, cue: 'jade' }, 2: null });
+  }
+  await request('logout', 'POST', null, loginCookie);
+  assert.deepEqual(await (await request('profile', 'GET', null, loginCookie)).json(), { profile: null });
+  assert.equal((await fetch(base + '/.runtime/accounts.json')).status, 404);
+});
 
 test('both seats sync 3D rotation; break pots stay open until a normal pot assigns groups without a call', { timeout: 60000 }, async t => {
   const { host, owner, make, initial, players, reconnect } = await connectMatch(t);
