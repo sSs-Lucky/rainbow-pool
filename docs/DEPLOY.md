@@ -22,17 +22,17 @@ npm start
 - `POOL_DATA_DIR`：房间及账号存档目录，默认项目内 .runtime。更新代码时应保留该目录，或使用独立持久目录。
 - `POOL_PUBLIC_ORIGIN`：反向代理提供的公网来源，例如 `https://pool.example.com`。代理终止 TLS 或改写 Host 时，设为浏览器实际访问的协议与域名，用于登录请求和 WebSocket 来源校验。
 
-使用环境变量、宿主平台配置或 systemd EnvironmentFile 设置变量。`.env.example` 可以复制为 `.env` 后通过 `node --env-file=.env server.mjs` 使用；普通 npm start 不自动读取该文件。
+使用环境变量、宿主平台配置或 systemd EnvironmentFile 设置变量。[.env.example](../.env.example) 可以复制为 `.env` 后通过 `node --env-file=.env server.mjs` 使用；普通 npm start 不自动读取该文件。
 
-个人部署记录存于不提交的 deployment.json，格式示例见 deployment.example.json。存档含席位凭据，不作为静态资源提供，也不上传 GitHub。
+个人部署记录存于不提交的 deployment.json，格式示例见 [deployment.example.json](../deployment.example.json)。存档含席位凭据，不作为静态资源提供，也不上传 GitHub。
 
 ## Linux 服务示例
 
-[deploy/rainbow-pool.service](deploy/rainbow-pool.service) 是 systemd 模板：假定代码位于 /srv/rainbow-pool，以已有的 pool 系统账号运行。部署者需按实际情况调整账号、工作目录及 Node.js 的绝对路径；用 `command -v node` 确认路径。`StateDirectory` 创建独立存档目录。
+[deploy/rainbow-pool.service](../deploy/rainbow-pool.service) 是 systemd 模板：假定代码位于 /srv/rainbow-pool，以已有的 pool 系统账号运行。部署者需按实际情况调整账号、工作目录及 Node.js 的绝对路径；用 `command -v node` 确认路径。`StateDirectory` 创建独立存档目录。
 
 按机器配置安装并启用服务；更新代码、构建完成后重启该服务。InstaBox 等平台也可以使用其提供的进程管理器。免费主机的休眠、连续运行时长和冷却限制由平台管理，源码发布不改变这些限制。
 
-[deploy/nginx.conf.example](deploy/nginx.conf.example) 给出同源反向代理示例；更换域名和端口，并使用平台或现有证书方案配置 HTTPS。模板的 map 和 server 应放在 Nginx 的 http 上下文中。
+[deploy/nginx.conf.example](../deploy/nginx.conf.example) 给出同源反向代理示例；更换域名和端口，并使用平台或现有证书方案配置 HTTPS。模板的 map 和 server 应放在 Nginx 的 http 上下文中。
 
 ## 验证
 

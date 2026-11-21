@@ -2,7 +2,7 @@
 
 支持手机横屏的中文八球游戏，采用俯视球桌和三维滚动球面。分享房间链接即可双人对打，也可以单人练球。登录后可选择球杆，并在对战中显示昵称。
 
-[在线体验](https://3000-agq2udpq7t7yj3auet7yeeg4fy.instabox.tech/) · [更新日志](CHANGELOG.md) · [物理模型](PHYSICS.md) · [部署说明](DEPLOY.md) · [参与贡献](CONTRIBUTING.md)
+[在线体验](https://3000-agq2udpq7t7yj3auet7yeeg4fy.instabox.tech/) · [更新日志](CHANGELOG.md) · [物理模型](docs/PHYSICS.md) · [部署说明](docs/DEPLOY.md) · [参与贡献](CONTRIBUTING.md)
 
 示例部署使用免费云主机，可能休眠或暂时不可用。可以按下文自行部署。
 
@@ -66,7 +66,7 @@ npm start
 
 方向箭头基于固定参考击球求得的初始方向，实际效果还受力度、加塞及后续碰撞影响。
 
-物理模型让球心沿台面运动，并计算绕三个轴的自转。WebGL 根据自转绘制三维球面，其他渲染器使用静态球面。模型采用贴台球与水平球杆的刚体近似，适用范围见 [物理模型说明](PHYSICS.md)。
+物理模型让球心沿台面运动，并计算绕三个轴的自转。WebGL 根据自转绘制三维球面，其他渲染器使用静态球面。模型采用贴台球与水平球杆的刚体近似，适用范围见 [物理模型说明](docs/PHYSICS.md)。
 
 ## 本地开发
 
@@ -136,5 +136,7 @@ deploy/             通用部署模板
 ## 开源与致谢
 
 本项目基于 [Arel Kair / Pool](https://github.com/arelkair/pool) 二次开发，上游基准提交为 `f1c0017e219d72bb7c7f1c75bd7db9d3c6d88a88`。保留原作者版权与 [MIT LICENSE](LICENSE)。改造内容包括中文手机操控、服务器统一对战、旋转与摩擦、袋口几何、自由球和稳定方向指引等；来源与变更范围见 [UPSTREAM.md](UPSTREAM.md)。
+
+其他开源台球项目的对比和选型过程见 [调研笔记](docs/RESEARCH-2026-11-05.md)。
 
 音效使用上游记录的 CC0 资源，来源声明保留在 [public/sfx/CREDITS.txt](public/sfx/CREDITS.txt)。界面中的球桌、球杆、球体和控件由项目代码绘制，未包含商业台球小游戏的截图、贴图或品牌资产。

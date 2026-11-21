@@ -11,7 +11,7 @@ export const BALL_R = 12;
 export const POCKET_R = 18;
 export const POCKET_CAPTURE_R = POCKET_R - 5;
 
-// Physical values use SI units. Screen positions use pixels (see PHYSICS.md).
+// Physical values use SI units. Screen positions use pixels (see docs/PHYSICS.md).
 export const PHYSICS_VERSION = 3;
 export const PHYSICAL_R = 0.028575;
 export const BALL_MASS = 0.170097;
