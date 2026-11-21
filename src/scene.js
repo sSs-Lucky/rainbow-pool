@@ -101,17 +101,31 @@ export function createFlatBalls() {
 }
 export function buildCueVisual() {
   const cue = new Container();
-  const shadow = new Graphics().poly([-347, 4, -347, 13, -3, 7, -3, 3]).fill({ color: 0x00180f, alpha: .32 });
+  const gradient = stops => new FillGradient({
+    type: 'linear', start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: 'local',
+    colorStops: stops.map(([offset, color]) => ({ offset, color })),
+  });
+  const shadow = new Graphics().poly([-352, 3, -344, 13, -4, 5, 0, 2]).fill({ color: 0x00120f, alpha: .38 });
   const stick = new Graphics();
-  stick.poly([-345, -5.5, -345, 5.5, -7, 2.4, -7, -2.4]).fill(0xb47b3b);
-  stick.poly([-345, -5.5, -345, -.7, -7, -.8, -7, -2.4]).fill(0xf0cc88);
-  stick.poly([-345, 3.6, -345, 5.5, -7, 2.4, -7, 1.2]).fill(0x764421);
-  stick.poly([-343, -5.5, -343, 5.5, -236, 4.5, -236, -4.5]).fill(0x20302b);
-  for (let x = -333; x < -245; x += 7) stick.moveTo(x, -4.8).lineTo(x + 8, 4.5).stroke({ color: 0x607068, width: 1, alpha: .7 });
-  stick.rect(-240, -4.7, 5, 9.4).fill(0xdcc188);
-  stick.rect(-16, -2.5, 10, 5).fill(0xf3eee0);
-  stick.rect(-6, -2.6, 5, 5.2).fill(0x56c2d1);
-  stick.moveTo(-229, -2).lineTo(-28, -.8).stroke({ color: 0xffe8ac, width: .8, alpha: .65 });
+  stick.poly([-347, -7, -347, 7, -10, 2.4, -10, -2.4])
+    .fill(gradient([[0, 0x101926], [.32, 0x59748f], [.5, 0x293d52], [.76, 0x142432], [1, 0x090e18]]));
+  stick.poly([-239, -5.3, -239, 5.3, -95, 3.5, -95, -3.5])
+    .fill(gradient([[0, 0x252149], [.32, 0x7561a2], [.53, 0x302d60], [.81, 0x26304e], [1, 0x151a2e]]));
+  stick.poly([-178, -.5, -205, -3.2, -231, -.5, -205, 3.2]).fill(0x60cde7);
+  stick.poly([-190, -.5, -205, -1.8, -220, -.5, -205, 1.8]).fill(0xe7fbff);
+  stick.poly([-336, -6.8, -336, 6.8, -251, 5.5, -251, -5.5]).fill(0x111925);
+  for (let x = -333; x <= -260; x += 5) {
+    stick.moveTo(x, -4.8).lineTo(x + 4, 0).lineTo(x, 4.8);
+  }
+  stick.stroke({ color: 0x8396b5, width: .9, alpha: .55 });
+  const metal = gradient([[0, 0x536585], [.33, 0xf2f6f5], [.63, 0x85a7bc], [1, 0x263656]]);
+  for (const [x, radius, width] of [[-348, 7, 11], [-255, 5.8, 6], [-242, 5.5, 3], [-99, 3.7, 6], [-17, 2.65, 12]]) {
+    stick.roundRect(x, -radius, width, radius * 2, 1.2).fill(metal);
+  }
+  stick.rect(-246, -5.4, 3, 10.8).fill(0x86bcff);
+  stick.moveTo(-93, -1.9).lineTo(-18, -1).stroke({ color: 0xd5f7ff, width: .95, alpha: .86 });
+  stick.roundRect(-5, -2.5, 5, 5, 1.4).fill(0x4ebedc);
+  stick.moveTo(-3.5, -1.35).lineTo(-.8, -1.35).stroke({ color: 0xabf4ff, width: .8 });
   cue.addChild(shadow, stick);
   return cue;
 }

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { traceAim, powerFromPull, fineAngle, tipFromPoint, predictDirections } from '../src/aiming.js';
+import { cuePose, cueTravel, cueAimGap, startCueStroke, cueStrokeFrame } from '../src/cue-motion.js';
 import { BALL_R, CUSHION, TABLE_W, POCKET_CAPTURE_R } from '../src/config.js';
 const cue = { x: 280, y: 280, number: 0 };
 test('aim guide stops at the first live ball and reports its departure direction', () => {
@@ -55,4 +56,32 @@ test('cut-shot direction uses the collision solver and mirrors for the opposite 
 test('the stable guide has no spurious target when aiming at an open cushion', () => {
   const balls=[stationary(280,280,0),stationary(450,320,1)];
   assert.equal(predictDirections(balls[0],balls,0).objectDirection,null);
+});
+
+test('cue release starts from the charged position, touches the ball and retracts visibly', () => {
+  const stroke = startCueStroke(1000, .8, 85);
+  assert.deepEqual(cueStrokeFrame(stroke, 1000), { gap: cueAimGap(.8, 85), alpha: 1 });
+  assert.ok(cueStrokeFrame(stroke, stroke.impactAt - 10).gap > 0);
+  assert.equal(Math.abs(cueStrokeFrame(stroke, stroke.impactAt).gap), 0);
+  const follow = cueStrokeFrame(stroke, stroke.impactAt + 60);
+  const recovery = cueStrokeFrame(stroke, stroke.impactAt + 175);
+  assert.ok(follow.gap < 0 && recovery.gap > follow.gap);
+  assert.equal(recovery.alpha, 1);
+  const fade = cueStrokeFrame(stroke, stroke.impactAt + 340);
+  assert.ok(fade.gap > recovery.gap && fade.alpha > 0 && fade.alpha < 1);
+  assert.equal(cueStrokeFrame(stroke, stroke.impactAt + 400), null);
+});
+
+test('cue contact follows the selected spin point and cushion shots keep visible shaft travel', () => {
+  const tip = { x: .3, y: .4 };
+  const point = cuePose(cue, Math.PI / 2, tip, 0);
+  assert.ok(Math.abs(point.x - (cue.x - tip.x * BALL_R)) < 1e-9);
+  assert.ok(Math.abs(point.y - (cue.y - BALL_R * Math.sqrt(.75))) < 1e-9);
+
+  const bounds = { left: -30, right: 1100, top: -20, bottom: 580 };
+  const nearRail = { x: 530, y: 42 };
+  const travel = cueTravel(nearRail, Math.PI / 2, bounds);
+  assert.ok(travel > 0 && travel < 85);
+  assert.ok(cuePose(nearRail, Math.PI / 2, { x: 0, y: 0 }, cueAimGap(1, travel)).y >= bounds.top + 36);
+  assert.equal(cueTravel(cue, 0, bounds), 85);
 });
