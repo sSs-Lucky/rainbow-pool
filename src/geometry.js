@@ -1,12 +1,13 @@
-import { CUSHION, TABLE_W, TABLE_H, BALL_R, POCKET_R } from './config.js';
+import { CUSHION, TABLE_W, TABLE_H, BALL_R, POCKET_CAPTURE_R } from './config.js';
 
 const L = CUSHION, R = L + TABLE_W, T = CUSHION, B = T + TABLE_H, M = (L + R) / 2;
-const corner = 36, side = 29, back = 18;
+const corner = 31, side = 24, back = 18;
+const cornerBack = corner - 24, sideBack = side - 10;
 
 // Each cushion is a trapezoid. Its three exposed edges are the collision boundary;
 // the fourth, rear edge is inside the wooden rail. Render and simulation share it.
-const topLeft = [[L + 12, T - back], [M - 19, T - back], [M - side, T], [L + corner, T]];
-const left = [[L - back, T + 12], [L, T + corner], [L, B - corner], [L - back, B - 12]];
+const topLeft = [[L + cornerBack, T - back], [M - sideBack, T - back], [M - side, T], [L + corner, T]];
+const left = [[L - back, T + cornerBack], [L, T + corner], [L, B - corner], [L - back, B - cornerBack]];
 const reflectX = p => p.map(([x, y]) => [L + R - x, y]);
 const reflectY = p => p.map(([x, y]) => [x, T + B - y]);
 export const CUSHION_POLYGONS = [topLeft, reflectX(topLeft), reflectY(topLeft), reflectY(reflectX(topLeft)), left, reflectX(left)];
@@ -28,7 +29,7 @@ export const POCKETS = [
   { x: L, y: B, dx: -1, dy: 1 }, { x: M, y: B + 10, dx: 0, dy: 1 }, { x: R, y: B, dx: 1, dy: 1 },
 ];
 export function pocketAt(x, y) {
-  return POCKETS.find(p => Math.hypot(x - p.x, y - p.y) < POCKET_R - 5);
+  return POCKETS.find(p => Math.hypot(x - p.x, y - p.y) < POCKET_CAPTURE_R);
 }
 export function closestOnSegment(x, y, s) {
   const dx = s.bx - s.ax, dy = s.by - s.ay;

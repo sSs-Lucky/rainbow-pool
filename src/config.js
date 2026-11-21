@@ -6,7 +6,8 @@ export const CANVAS_W = TABLE_W + CUSHION * 2;
 export const CANVAS_H = TABLE_H + CUSHION * 2;
 
 export const BALL_R = 12;
-export const POCKET_R = 22;
+export const POCKET_R = 18;
+export const POCKET_CAPTURE_R = POCKET_R - 5;
 
 // Physical values use SI units. Screen positions use pixels (see PHYSICS.md).
 export const PHYSICS_VERSION = 3;

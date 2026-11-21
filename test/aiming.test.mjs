@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { traceAim, powerFromPull, fineAngle, tipFromPoint, predictDirections } from '../src/aiming.js';
-import { BALL_R, CUSHION, TABLE_W } from '../src/config.js';
+import { BALL_R, CUSHION, TABLE_W, POCKET_CAPTURE_R } from '../src/config.js';
 const cue = { x: 280, y: 280, number: 0 };
 test('aim guide stops at the first live ball and reports its departure direction', () => {
   const far = { x: 700, y: 280, number: 2 }, near = { x: 500, y: 280, number: 1 };
@@ -35,7 +35,8 @@ test('fine aiming preserves 0.02 degrees per pixel and tip input stays in the sa
 });
 test('a geometric guide reaches side pocket throats rather than an invisible rectangular wall', () => {
   const guide = traceAim({ x: 530, y: 280 }, [], -Math.PI / 2);
-  assert.ok(guide.pocket); assert.equal(guide.cushion, null); assert.ok(guide.end.y < 42);
+  assert.ok(guide.pocket); assert.equal(guide.cushion, null);
+  assert.ok(Math.abs(guide.end.y - (guide.pocket.y + POCKET_CAPTURE_R)) < 1e-8);
 });
 
 const stationary = (x,y,number) => ({ x,y,number,vx:0,vy:0,wx:0,wy:0,wz:0,potted:false });

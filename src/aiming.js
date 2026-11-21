@@ -1,4 +1,4 @@
-import { BALL_R, MAX_TIP_OFFSET } from './config.js';
+import { BALL_R, MAX_TIP_OFFSET, POCKET_CAPTURE_R } from './config.js';
 import { CUSHION_SEGMENTS, POCKETS } from './geometry.js';
 import { shoot, evolveCloth, resolveBallCollision } from './physics.js';
 
@@ -35,7 +35,7 @@ export function traceAim(cue, balls, angle, maxLength = 1100) {
     }
     for (const [cx, cy] of [[s.ax, s.ay], [s.bx, s.by]]) accept(circleHit(cue.x, cue.y, dx, dy, cx, cy, BALL_R), s, 'rail');
   }
-  for (const p of POCKETS) accept(circleHit(cue.x, cue.y, dx, dy, p.x, p.y, 17), p, 'pocket');
+  for (const p of POCKETS) accept(circleHit(cue.x, cue.y, dx, dy, p.x, p.y, POCKET_CAPTURE_R), p, 'pocket');
   for (const b of balls) if (b.number !== cue.number && !b.potted) accept(circleHit(cue.x, cue.y, dx, dy, b.x, b.y, 2 * BALL_R), b, 'ball');
   const end = { x: cue.x + dx * distance, y: cue.y + dy * distance };
   let objectDirection = null;
