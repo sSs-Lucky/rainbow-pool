@@ -4,6 +4,8 @@ export const CUSHION = 30;
 
 export const CANVAS_W = TABLE_W + CUSHION * 2;
 export const CANVAS_H = TABLE_H + CUSHION * 2;
+export const HEAD_STRING = CUSHION + TABLE_W / 4;
+export const FOOT_SPOT = CUSHION + TABLE_W * 3 / 4;
 
 export const BALL_R = 12;
 export const POCKET_R = 22;

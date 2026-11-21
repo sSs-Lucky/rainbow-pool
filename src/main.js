@@ -1,18 +1,16 @@
 import { Application, Container, Graphics, RendererType } from 'pixi.js';
-import { CANVAS_W, CANVAS_H, BALL_R } from './config.js';
+import { CANVAS_W, CANVAS_H, BALL_R, POCKET_R } from './config.js';
 import { powerFromPull, fineAngle, tipFromPoint } from './aiming.js';
 import { rack, step, allStopped, shoot, placeCueExact, clampTip } from './physics.js';
-import { drawTable, drawAim, clearAim, drawPlacement, buildCueVisual, createFlatBalls } from './scene.js';
+import { drawTable, drawAim, clearAim, drawPlacement, drawCall, buildCueVisual, createFlatBalls } from './scene.js';
 import { createSphereBalls } from './ball-visual.js';
 import { SnapshotPlayback } from './playback.js';
-import { validPlacement } from './geometry.js';
+import { POCKETS, validPlacement } from './geometry.js';
+import { BREAK_CHOICES, groupOf, isOnEight } from './shot-rules.js';
 import { host, join } from './net.js';
 import * as ui from './ui.js';
 import * as audio from './audio.js';
 import { t, applyStatic } from './i18n.js';
-
-const groupOf = (n) => (n === 0 ? 'cue' : n === 8 ? 'eight' : n <= 7 ? 'solids' : 'stripes');
-const other = (p) => (p === 1 ? 2 : 1);
 
 const game = {
   mode: 'solo', myPlayer: 1, turn: 1, started: false,
@@ -20,11 +18,18 @@ const game = {
   shots: 0, shooting: false, shotPotted: [], cueFoul: false,
   groups: { 1: null, 2: null }, gameOver: false, winner: null,
   net: null, settled: true, cuePotted: false, ballInHand: false, connected: false, room: '',
+  breaking: false, breakDecision: null, placementZone: 'table',
   sfxBall: 0, sfxRail: 0, sfxPocket: 0,
 };
 
-let app, ballVisuals, aimLine, placementLine, cueVisual;
+let app, ballVisuals, aimLine, placementLine, callMarks, cueVisual;
 const placement = { point: null, valid: false, pointer: null, before: null, pending: false };
+const shotCall = { pocket: null, safety: false };
+const breakLabels = { accept: '按现球位继续', rebreak: '由我重开', returnBreak: '让对手重开',
+  spot: '复位黑 8 后继续', spotInHand: '复位黑 8 并摆白球', headInHand: '开球线后摆白球' };
+const breakPrompts = { illegalBreak: '开球未达到四球碰库', breakEight: '开球黑 8 入袋',
+  breakEightScratch: '开球黑 8 入袋且犯规', breakFoul: '开球犯规' };
+let breakPanelKey = '', callMarkKey = '';
 let placementState = '', guideState = '';
 const playback = new SnapshotPlayback();
 let lastRenderAt = performance.now();
@@ -49,9 +54,10 @@ async function main() {
   app.stage.addChild(ballLayer);
   aimLine = new Graphics();
   placementLine = new Graphics();
+  callMarks = new Graphics();
   cueVisual = buildCueVisual();
   cueVisual.visible = false;
-  app.stage.addChild(aimLine, cueVisual, placementLine);
+  app.stage.addChild(aimLine, cueVisual, placementLine, callMarks);
 
   applyStatic();
 
@@ -69,6 +75,7 @@ async function main() {
   setupInput();
   setupPowerControl();
   setupPrecisionControls();
+  setupShotCall();
   ui.el('btn-place-confirm').onclick = confirmCuePlacement;
 
   lastPhysics = performance.now();
@@ -149,6 +156,7 @@ function renderFrame() {
 }
 
 function resetControls() {
+  resetShotCall();
   aim.power = 0; aim.pointer = null; aim.strokeUntil = 0;
   aim.tip = { x: 0, y: 0 }; aim.finePointer = null; aim.fineDelta = 0;
   ui.el('spin-modal').classList.remove('show');
@@ -162,10 +170,13 @@ function resetControls() {
 function renderControls() {
   const inGame = document.body.classList.contains('in-game');
   const usable = inGame && canShoot();
-  if (!usable && aim.pointer != null) { aim.pointer = null; aim.power = 0; }
+  const onEight = finishingShot();
+  const needsCall = onEight && shotCall.pocket == null;
+  const canPower = usable && !needsCall;
+  if (!canPower && aim.pointer != null) { aim.pointer = null; aim.power = 0; }
   const now = performance.now(), stroking = now < aim.strokeUntil;
   const opponentReady = game.mode !== 'solo' && game.started && game.connected && game.settled
-    && !game.gameOver && !game.ballInHand && !game.cuePotted && game.turn !== game.myPlayer;
+    && !game.gameOver && !game.ballInHand && !game.breakDecision && !game.cuePotted && game.turn !== game.myPlayer;
   const angle = opponentReady ? opponentAim.angle : aim.angle;
   const power = opponentReady ? opponentAim.power : aim.power;
   const tip = opponentReady ? opponentAim.tip : aim.tip;
@@ -179,6 +190,7 @@ function renderControls() {
     ui.showHint();
   } else if (!game.ballInHand) ui.hideHint();
   renderPlacement(inGame);
+  renderShotPanels(inGame, usable, onEight);
   if (usable && game.mode !== 'solo' && now - lastAimSent > 90) {
     const signature = `${aim.angle.toFixed(6)}-${aim.power.toFixed(2)}-${aim.tip.x.toFixed(3)}-${aim.tip.y.toFixed(3)}`;
     if (signature !== aimSent) { game.net.send({ type: 'aim', angle: aim.angle, power: aim.power, tip: aim.tip }); aimSent = signature; }
@@ -196,10 +208,10 @@ function renderControls() {
   const stopped = game.mode === 'solo' ? allStopped(game.balls) : game.settled;
   const label = game.gameOver ? '本局结束' : game.ballInHand && (game.mode === 'solo' || game.turn === game.myPlayer)
     ? '先摆白球' : game.mode !== 'solo' && !game.connected ? '等待连接' : !stopped ? '球在运动'
-    : !usable ? '对手回合' : '下拉蓄力';
-  const percent = Math.round(aim.power * 100), next = `${usable}-${percent}-${label}`;
+    : game.breakDecision ? '等待选择' : !usable ? '对手回合' : needsCall ? '先选黑 8 袋口' : '下拉蓄力';
+  const percent = Math.round(aim.power * 100), next = `${canPower}-${percent}-${label}`;
   if (next !== controlState) {
-    const track = ui.el('power-track'); track.disabled = !usable;
+    const track = ui.el('power-track'); track.disabled = !canPower;
     track.setAttribute('aria-valuenow', String(percent));
     track.setAttribute('aria-valuetext', `${percent}% 力度`);
     ui.el('power-value').textContent = `${percent}%`;
@@ -211,16 +223,76 @@ function renderControls() {
 }
 function strike() {
   if (!canShoot() || aim.power < .025) { aim.power = 0; return; }
+  const onEight = finishingShot();
+  if (onEight && shotCall.pocket == null) { aim.power = 0; return; }
+  const call = onEight ? { ball: 8, pocket: shotCall.pocket } : shotCall.safety ? { safety: true } : null;
   const power = Math.pow(aim.power, 1.35), dx = Math.cos(aim.angle), dy = Math.sin(aim.angle);
   aim.strokeTip = { ...aim.tip }; aim.strokePower = aim.power; aim.strokeUntil = performance.now() + 140;
   aim.strokePos = { x: game.cue.x, y: game.cue.y };
   aim.power = 0; aim.pointer = null;
   if (game.mode !== 'solo') {
-    game.net.send({ type: 'shoot', dx, dy, power, tip: aim.tip }); game.settled = false; audio.cueStrike();
+    game.net.send({ type: 'shoot', dx, dy, power, tip: aim.tip, call }); game.settled = false; audio.cueStrike();
+    resetShotCall();
   } else doShoot(dx, dy, power, aim.tip);
   aim.tip = { x: 0, y: 0 }; ui.el('spin-modal').classList.remove('show');
   ui.hideHint();
 }
+
+function finishingShot() {
+  return game.mode !== 'solo' && !game.breaking && isOnEight(game.balls, game.groups[game.myPlayer]);
+}
+
+function resetShotCall() {
+  shotCall.pocket = null;
+  shotCall.safety = false;
+}
+
+function setupShotCall() {
+  ui.el('call-pocket').onchange = event => {
+    shotCall.pocket = event.target.value === '' ? null : Number(event.target.value);
+  };
+  ui.el('call-safety').onclick = () => { shotCall.safety = !shotCall.safety; };
+}
+
+function renderShotPanels(inGame, usable, onEight) {
+  const calling = usable && onEight;
+  const deciding = inGame && game.mode !== 'solo' && !!game.breakDecision;
+  document.body.classList.toggle('calling', calling);
+  document.body.classList.toggle('break-choice', deciding);
+  ui.el('call-bar').hidden = !calling;
+  ui.el('break-bar').hidden = !deciding;
+  callMarks.visible = calling;
+  const safety = ui.el('call-safety');
+  safety.hidden = !usable || game.mode === 'solo' || game.breaking || onEight;
+  if (safety.getAttribute('aria-pressed') !== String(shotCall.safety)) safety.setAttribute('aria-pressed', String(shotCall.safety));
+
+  if (calling) {
+    const pocket = ui.el('call-pocket');
+    const pocketValue = shotCall.pocket == null ? '' : String(shotCall.pocket);
+    if (pocket.value !== pocketValue) pocket.value = pocketValue;
+    const target = game.byNumber.get(8);
+    const mark = `${target?.x}:${target?.y}:${shotCall.pocket}`;
+    if (mark !== callMarkKey) {
+      drawCall(callMarks, target, POCKETS[shotCall.pocket]);
+      callMarkKey = mark;
+    }
+  }
+  const key = deciding ? `${game.breakDecision}:${game.turn === game.myPlayer}:${game.connected}` : '';
+  if (key !== breakPanelKey) {
+    breakPanelKey = key;
+    const mine = game.myPlayer === game.turn && game.connected;
+    ui.el('break-status').textContent = deciding
+      ? `${breakPrompts[game.breakDecision]} · ${mine ? '请选择' : '等待选择'}` : '';
+    const buttons = deciding && mine ? BREAK_CHOICES[game.breakDecision].map(choice => {
+      const button = document.createElement('button');
+      button.textContent = breakLabels[choice];
+      button.onclick = () => game.net.send({ type: 'breakChoice', choice });
+      return button;
+    }) : [];
+    ui.el('break-actions').replaceChildren(...buttons);
+  }
+}
+
 function setupPowerControl() {
   const track = ui.el('power-track');
   track.addEventListener('pointerdown', e => {
@@ -353,6 +425,9 @@ function setupRack() {
   game.gameOver = false;
   game.winner = null;
   game.ballInHand = false;
+  game.breaking = false;
+  game.breakDecision = null;
+  game.placementZone = 'table';
   refreshHud();
 }
 
@@ -370,14 +445,12 @@ function refreshHud() {
 }
 
 function canShoot() {
-  if (game.gameOver || game.ballInHand) return false;
+  if (game.gameOver || game.ballInHand || game.breakDecision) return false;
   if (game.mode !== 'solo' && (!game.started || !game.connected)) return false;
   const stopped = game.mode !== 'solo' ? game.settled : allStopped(game.balls);
   if (!stopped) return false;
   if (game.mode !== 'solo') return !game.cuePotted && game.turn === game.myPlayer;
-  if (game.cue.potted) return false;
-  if (game.mode === 'solo') return true;
-  return game.turn === game.myPlayer;
+  return !game.cue.potted;
 }
 
 function canPlaceCue() {
@@ -393,8 +466,11 @@ function renderPlacement(inGame) {
   const show = inGame && game.ballInHand && !game.gameOver;
   const mine = game.mode === 'solo' || game.turn === game.myPlayer;
   const enabled = show && mine && canPlaceCue();
-  const text = !mine ? '对手自由球 · 正在摆放白球' : placement.pending ? '正在确认白球位置…' : !game.connected && game.mode !== 'solo' ? '等待连接后摆放白球' :
-    placement.point && !placement.valid ? '此处不能摆球 · 请选择台面空位' : '自由球 · 可在全台面拖动白球，摆好后确认';
+  const headOnly = game.placementZone === 'head';
+  const area = headOnly ? '左侧开球线后' : '台面空位';
+  const text = !mine ? '对手正在摆放白球' : placement.pending ? '正在确认白球位置…' : !game.connected && game.mode !== 'solo' ? '等待连接后摆放白球' :
+    placement.point && !placement.valid ? `此处不能摆球 · 请选择${area}` :
+      `${game.breaking ? '开球' : '自由球'} · 在${area}摆白球并确认`;
   const key = `${show}:${mine}:${enabled}:${placement.valid}:${text}`;
   if (key !== placementState) {
     ui.el('placement-bar').classList.toggle('show', show);
@@ -408,12 +484,13 @@ function renderPlacement(inGame) {
   placementLine.visible = show;
   if (show) {
     const point = mine ? placement.point || (!game.cue.potted ? game.cue : null) : !game.cue.potted ? game.cue : null;
-    drawPlacement(placementLine, point, mine ? !placement.point || placement.valid : true);
+    drawPlacement(placementLine, point, mine ? !placement.point || placement.valid : true, headOnly);
   }
 }
+const validCuePosition = (x, y) => validPlacement(x, y, game.balls, game.cue, game.placementZone);
 function previewCueAt(x, y) {
   if (!canPlaceCue()) return;
-  placement.point = { x, y }; placement.valid = validPlacement(x, y, game.balls, game.cue);
+  placement.point = { x, y }; placement.valid = validCuePosition(x, y);
 }
 function shareCuePlacement() {
   if (canPlaceCue() && placement.valid && game.mode !== 'solo') game.net.send({ type: 'place', ...placement.point, confirm: false });
@@ -458,31 +535,6 @@ function showEndBanner() {
   won ? audio.win() : audio.lose();
 }
 
-function announceTurn() {
-  ui.updateTurn(game.mode, game.turn === game.myPlayer, game.ballInHand);
-  if (game.ballInHand && game.turn === game.myPlayer) {
-    queueBanner(t('ballInHandYou'));
-    ui.el('hint').textContent = t('placeCueHint');
-    ui.showHint();
-  } else {
-    queueBanner(game.turn === game.myPlayer ? t('yourTurn') : t('rivalTurn'));
-  }
-  if (game.turn === game.myPlayer) audio.turnChime();
-  maybeNotifyTurn();
-}
-
-function announceGroupAndTurn() {
-  const mg = game.groups[game.myPlayer];
-  queueBanner(mg === 'stripes' ? t('mustStripes') : t('mustSolids'));
-  queueBanner(game.turn === game.myPlayer ? t('yourTurn') : t('rivalTurn'));
-  ui.updateTurn(game.mode, game.turn === game.myPlayer, game.ballInHand);
-  if (game.turn === game.myPlayer) {
-    audio.turnChime();
-    maybeNotifyTurn();
-  }
-  refreshHud();
-}
-
 function queueBanner(text) {
   bannerQ.push(text);
   if (!bannerBusy) nextBanner();
@@ -505,11 +557,10 @@ function stopBanners() {
   ui.clearBanner();
 }
 
-function maybeNotifyTurn() {}
-
 function applyState(m) {
   playback.accept(m);
   const prevHand = game.ballInHand, prevTurn = game.turn, prevOver = game.gameOver, prevConnected = game.connected;
+  const prevSettled = game.settled, prevGroup = game.groups[game.myPlayer];
   game.connected = m.connected.length === 2;
   ui.el('connection').textContent = game.connected ? '双人已连接' : '等待对手重连';
   if (game.started && prevConnected && !game.connected) ui.toast(t('rivalLeft'));
@@ -522,6 +573,9 @@ function applyState(m) {
   game.gameOver = m.gameOver;
   game.winner = m.winner;
   game.ballInHand = m.ballInHand;
+  game.breaking = m.breaking;
+  game.breakDecision = m.breakDecision;
+  game.placementZone = m.placementZone ?? 'table';
 
   for (const bs of m.balls) {
     const ball = game.byNumber.get(bs.n);
@@ -540,15 +594,16 @@ function applyState(m) {
   }
 
   refreshHud();
-  ui.updateTurn(game.mode, game.turn === game.myPlayer, game.ballInHand);
+  ui.updateTurn(game.mode, game.turn === game.myPlayer, game.ballInHand, game.breaking, game.breakDecision);
 
   if (m.turn !== prevTurn || (m.ballInHand && !prevHand)) {
     resetControls(); stopBanners();
-    if (game.ballInHand) {
-      const prefix = m.reason === 'scratch' ? '白球落袋犯规 · ' : '击球犯规 · ';
-      queueBanner(prefix + (game.turn === game.myPlayer ? '你获得自由球' : '对手获得自由球'));
-      ui.el('hint').textContent = t('placeCueHint'); ui.showHint();
-    } else queueBanner(game.turn === game.myPlayer ? t('yourTurn') : t('rivalTurn'));
+    if (!game.breaking && !game.breakDecision && !game.gameOver) {
+      if (game.ballInHand) {
+        const prefix = m.reason === 'scratch' || m.reason === 'breakScratch' ? '白球落袋 · ' : '犯规 · ';
+        queueBanner(prefix + (game.turn === game.myPlayer ? '你获得自由球' : '对手获得自由球'));
+      } else queueBanner(game.turn === game.myPlayer ? t('yourTurn') : t('rivalTurn'));
+    }
     if (game.turn === game.myPlayer) audio.turnChime();
   }
   if (!game.ballInHand) {
@@ -556,9 +611,14 @@ function applyState(m) {
     if (prevHand) ui.toast('白球已摆好，可以瞄准击球');
   } else if (game.turn === game.myPlayer && !placement.point && !game.cue.potted) {
     placement.point = { x: game.cue.x, y: game.cue.y };
-    placement.valid = validPlacement(game.cue.x, game.cue.y, game.balls, game.cue);
+    placement.valid = validCuePosition(game.cue.x, game.cue.y);
   }
 
+  const myGroup = game.groups[game.myPlayer];
+  if (!prevGroup && myGroup) queueBanner(myGroup === 'stripes' ? t('mustStripes') : t('mustSolids'));
+  if (m.settled && (!prevSettled || m.shots > 0 && m.turn !== prevTurn)) {
+    if (m.reason === 'breakPot') ui.toast('开球进球，继续击打 · 开放球台');
+  }
   if (game.gameOver && !prevOver) showEndBanner();
   if (game.ballInHand && game.turn === game.myPlayer) ui.el('hint').textContent = t('placeCueHint');
 }
@@ -583,6 +643,11 @@ function setupInput() {
       const p = pos(e); previewCueAt(p.x, p.y); return;
     }
     if (!canShoot()) return;
+    if (finishingShot()) {
+      const p = pos(e);
+      const pocket = POCKETS.findIndex(hole => Math.hypot(p.x - hole.x, p.y - hole.y) <= POCKET_R + 5);
+      if (pocket !== -1) { shotCall.pocket = pocket; return; }
+    }
     pointer = e.pointerId; app.canvas.setPointerCapture(e.pointerId); point(e);
   });
   app.canvas.addEventListener('pointermove', e => {
@@ -599,7 +664,7 @@ function setupInput() {
     pointer = null;
     if (placement.pointer != null) {
       placement.point = placement.before; placement.pointer = null;
-      placement.valid = !!placement.point && validPlacement(placement.point.x, placement.point.y, game.balls, game.cue);
+      placement.valid = !!placement.point && validCuePosition(placement.point.x, placement.point.y);
     }
   };
   app.canvas.addEventListener('pointercancel', cancel);
@@ -630,12 +695,11 @@ function leaveGame() {
 
 function onMessage(m) {
   if (m.type === 'start' && game.mode !== 'solo') {
-    const first = !game.started;
     setupRack(); game.groups = m.groups; game.turn = m.turn; game.started = true;
     stopBanners(); ui.enterGame(game.mode);
-    if (first) announceGroupAndTurn();
   } else if (m.type === 'state' && game.mode !== 'solo') applyState(m);
-  else if (m.type === 'placeRejected') { placement.pending = false; placement.valid = false; ui.toast('这个位置不能摆放白球，请选择其他空位'); }
+  else if (m.type === 'placeRejected') { placement.pending = false; placement.valid = false; ui.toast('请选择可摆放白球的位置'); }
+  else if (m.type === 'shotRejected') { game.settled = true; ui.toast('请先指定黑 8 的袋口'); }
   else if (m.type === 'aim' && m.player !== game.myPlayer) { opponentAim.angle = m.angle; opponentAim.power = m.power; opponentAim.tip = clampTip(m.tip); }
 }
 

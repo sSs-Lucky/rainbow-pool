@@ -2,11 +2,12 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomInt } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { rack, step, allStopped, shoot, placeCueExact, clampTip, evolveCloth } from './src/physics.js';
-import { adjudicateShot } from './src/shot-rules.js';
-import { PHYSICS_VERSION } from './src/config.js';
+import { adjudicateShot, BREAK_CHOICES, isOnEight, otherPlayer, validateEightCall } from './src/shot-rules.js';
+import { POCKETS, pocketAt } from './src/geometry.js';
+import { BALL_R, CUSHION, FOOT_SPOT, HEAD_STRING, PHYSICS_VERSION, TABLE_H, TABLE_W } from './src/config.js';
 const base = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(base, 'dist');
 const dataDir = process.env.POOL_DATA_DIR || path.join(base, '.runtime');
@@ -22,18 +23,40 @@ const send = (ws, msg) => {
 const rounded = (n, digits) => Number(n.toFixed(digits));
 const token = () => randomBytes(20).toString('hex');
 const code = () => randomBytes(4).toString('hex').slice(0, 6).toUpperCase();
+const RULES_VERSION = 1;
 let dirty = false;
-function reset(room) {
-  room.physicsVersion = PHYSICS_VERSION; room.balls = rack(); room.turn = 1; room.shots = 0; room.shooting = false;
-  room.ballInHand = false; room.potted = []; room.firstHit = null; room.railAfterHit = false;
-  room.gameOver = false; room.winner = null; room.groups = { 1: 'solids', 2: 'stripes' };
+function shuffledRack() {
+  const solids = randomInt(1, 8), stripes = randomInt(9, 16);
+  const corners = randomInt(2) ? [solids, stripes] : [stripes, solids];
+  const order = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15].filter(n => !corners.includes(n));
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [order[j], order[i]] = [order[i], order[j]];
+  }
+  order.splice(4, 0, 8);
+  order.splice(10, 0, corners[0]);
+  order.push(corners[1]);
+  return rack(order);
+}
+function clearShot(room) {
+  room.potted = []; room.potPockets = {}; room.breakRails = [];
+  room.firstHit = null; room.railAfterHit = false; room.crossedHead = false; room.headFault = false;
+  room.called = null; room.onEight = false;
+}
+function reset(room, breaker = randomInt(1, 3)) {
+  room.physicsVersion = PHYSICS_VERSION; room.rulesVersion = RULES_VERSION;
+  room.balls = shuffledRack(); room.balls[0].x = HEAD_STRING - BALL_R;
+  room.breaker = room.turn = breaker; room.shots = 0; room.shooting = false;
+  room.breaking = true; room.breakDecision = null; room.ballInHand = true; room.placementZone = 'head';
+  room.gameOver = false; room.winner = null; room.groups = { 1: null, 2: null };
+  clearShot(room);
   room.sfx = { b: 0, r: 0, p: 0 }; room.reason = ''; dirty = true;
 }
 function serialize(room) { return Object.fromEntries(Object.entries(room).filter(([k]) => !['sockets', 'sfx'].includes(k))); }
 try {
   for (const r of JSON.parse(fs.readFileSync(savePath, 'utf8'))) {
     if (Date.now() - r.updated > 6 * 3600_000) continue;
-    if (r.physicsVersion !== PHYSICS_VERSION) reset(r);
+    if (r.physicsVersion !== PHYSICS_VERSION || r.rulesVersion !== RULES_VERSION) reset(r);
     r.sockets = {}; r.sfx = { b: 0, r: 0, p: 0 }; rooms.set(r.code, r);
   }
 } catch {}
@@ -47,6 +70,7 @@ function state(room) {
   const connected = [1, 2].filter(p => room.sockets[p]?.readyState === WebSocket.OPEN);
   return { type: 'state', turn: room.turn, settled: !room.shooting, cuePotted: room.balls[0].potted,
     ballInHand: room.ballInHand, shots: room.shots, groups: room.groups, gameOver: room.gameOver,
+    breaking: room.breaking, breakDecision: room.breakDecision, placementZone: room.placementZone,
     physicsVersion: PHYSICS_VERSION, winner: room.winner, connected, reason: room.reason, sfx: room.sfx,
     balls: room.balls.map(b => ({
       n: b.number, x: rounded(b.x, 2), y: rounded(b.y, 2), p: b.potted,
@@ -58,6 +82,33 @@ function pushState(room) { broadcast(room, state(room)); room.sfx = { b: 0, r: 0
 function finishShot(room) {
   room.shooting = false;
   Object.assign(room, adjudicateShot(room));
+  room.updated = Date.now(); dirty = true; pushState(room);
+}
+function spotEight(room) {
+  const eight = room.balls.find(b => b.number === 8);
+  const y = CUSHION + TABLE_H / 2, min = CUSHION + BALL_R, max = CUSHION + TABLE_W - BALL_R;
+  for (let x = FOOT_SPOT; x <= max; x += .25) {
+    if (placeCueExact(eight, room.balls, x, y)) return;
+  }
+  for (let x = FOOT_SPOT - .25; x >= min; x -= .25) {
+    if (placeCueExact(eight, room.balls, x, y)) return;
+  }
+}
+function startRack(room, breaker) {
+  reset(room, breaker);
+  broadcast(room, { type: 'start', groups: room.groups, turn: room.turn });
+  pushState(room);
+}
+function decideBreak(room, choice) {
+  if (!BREAK_CHOICES[room.breakDecision]?.includes(choice)) return;
+  if (choice === 'rebreak' || choice === 'returnBreak') {
+    startRack(room, choice === 'returnBreak' ? otherPlayer(room.turn) : room.turn);
+    return;
+  }
+  if (choice === 'spot' || choice === 'spotInHand') spotEight(room);
+  room.ballInHand = choice === 'spotInHand' || choice === 'headInHand';
+  room.placementZone = room.ballInHand ? 'head' : 'table';
+  room.breakDecision = null; room.reason = '';
   room.updated = Date.now(); dirty = true; pushState(room);
 }
 function fail(ws, value) { send(ws, { type: 'error', code: value }); }
@@ -116,7 +167,7 @@ wss.on('connection', ws => {
     if (!room?.started) return;
     if (m.tip !== undefined && (!m.tip || typeof m.tip !== 'object' || ![m.tip.x, m.tip.y].every(Number.isFinite))) return;
     if (m.type === 'aim') {
-      if (room.gameOver || room.turn !== ws.player || room.shooting || room.ballInHand) return;
+      if (room.gameOver || room.turn !== ws.player || room.shooting || room.ballInHand || room.breakDecision) return;
       if (!Number.isFinite(m.angle) || !Number.isFinite(m.power)) return;
       for (const peer of Object.values(room.sockets)) if (peer !== ws) send(peer, { type: 'aim', player: ws.player,
         angle: Math.atan2(Math.sin(m.angle), Math.cos(m.angle)), power: Math.min(1, Math.max(0, m.power)), tip: clampTip(m.tip) });
@@ -124,19 +175,32 @@ wss.on('connection', ws => {
     }
     if (m.type === 'restart') {
       if (room.sockets[1]?.readyState !== WebSocket.OPEN || room.sockets[2]?.readyState !== WebSocket.OPEN) return;
-      reset(room); broadcast(room, { type: 'start', groups: room.groups, turn: room.turn }); pushState(room); return;
+      startRack(room, otherPlayer(room.breaker)); return;
     }
     if (room.gameOver || room.turn !== ws.player || room.shooting) return;
     if (room.sockets[1]?.readyState !== WebSocket.OPEN || room.sockets[2]?.readyState !== WebSocket.OPEN) return;
     const cue = room.balls[0];
+    if (room.breakDecision) {
+      if (m.type === 'breakChoice') decideBreak(room, m.choice);
+      return;
+    }
     if (m.type === 'place' && room.ballInHand && Number.isFinite(m.x) && Number.isFinite(m.y)) {
-      if (!placeCueExact(cue, room.balls, m.x, m.y)) { send(ws, { type: 'placeRejected' }); return; }
-      // Preview may be moved repeatedly. Legacy clients confirm with their one tap.
+      const x = rounded(m.x, 2), y = rounded(m.y, 2);
+      if (room.placementZone === 'head' && x >= HEAD_STRING) { send(ws, { type: 'placeRejected' }); return; }
+      if (!placeCueExact(cue, room.balls, x, y)) { send(ws, { type: 'placeRejected' }); return; }
+      // Preview may be moved repeatedly before confirming.
       if (m.confirm !== false) { room.ballInHand = false; room.reason = ''; }
       room.updated = Date.now(); pushState(room); dirty = true;
     } else if (m.type === 'shoot' && !room.ballInHand && !cue.potted && [m.dx, m.dy, m.power].every(Number.isFinite) && Math.hypot(m.dx, m.dy) > 0 && Number.isFinite(Math.hypot(m.dx, m.dy)) && m.power > 0) {
+      const onEight = !room.breaking && isOnEight(room.balls, room.groups[room.turn]);
+      const call = onEight ? validateEightCall(m.call) :
+        !room.breaking && m.call?.safety === true ? { safety: true } : null;
+      if (onEight && !call) { send(ws, { type: 'shotRejected' }); return; }
+      clearShot(room);
+      room.called = call;
+      room.onEight = onEight;
       shoot(cue, m.dx, m.dy, Math.min(1, Math.max(0, m.power)), clampTip(m.tip));
-      room.shots++; room.shooting = true; room.potted = []; room.firstHit = null; room.railAfterHit = false; room.reason = '';
+      room.shots++; room.shooting = true; room.reason = '';
       room.updated = Date.now(); dirty = true; pushState(room);
     }
   });
@@ -163,14 +227,26 @@ const simulation = setInterval(() => {
       }
       continue;
     }
-    const { hits, potted } = step(room.balls);
+    const { hits, potted, crossedHead } = step(room.balls);
     for (const h of hits) {
       if (h.type === 'ball') {
         room.sfx.b = Math.max(room.sfx.b, h.speed);
-        if (room.firstHit == null && (h.a === 0 || h.b === 0)) room.firstHit = h.a === 0 ? h.b : h.a;
-      } else { room.sfx.r = Math.max(room.sfx.r, h.speed); if (room.firstHit != null) room.railAfterHit = true; }
+        if (room.firstHit == null && (h.a === 0 || h.b === 0)) {
+          room.firstHit = h.a === 0 ? h.b : h.a;
+          room.headFault = room.placementZone === 'head' && h.objectBehindHead && !room.crossedHead && !h.crossedHead;
+        }
+      } else {
+        room.sfx.r = Math.max(room.sfx.r, h.speed);
+        if (room.firstHit != null) {
+          room.railAfterHit = true;
+          if (room.breaking && h.number !== 0 && !room.breakRails.includes(h.number)) room.breakRails.push(h.number);
+        }
+      }
     }
-    for (const b of potted) { room.potted.push(b.number); room.sfx.p++; }
+    room.crossedHead ||= crossedHead;
+    for (const b of potted) {
+      room.potted.push(b.number); room.potPockets[b.number] = POCKETS.indexOf(pocketAt(b.x, b.y)); room.sfx.p++;
+    }
     if (allStopped(room.balls)) finishShot(room); else if (frame % 3 === 0) pushState(room);
     dirty = true;
   }
