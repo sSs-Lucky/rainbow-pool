@@ -108,7 +108,7 @@ POOL_TEST_URL=http://127.0.0.1:3000 npm run test:network
 
 可通过宿主环境或服务管理器设置变量。也可以复制 `.env.example` 为 `.env`，使用 `node --env-file=.env server.mjs` 启动；普通 `npm start` 不会自动加载 `.env`。
 
-`.runtime` 包含房间状态、席位凭据和账号存档，已排除在 Git 之外。迁移部署时保留整个数据目录。个人部署记录使用本地 `deployment.json`，公开仓库只提供 `deployment.example.json`。房间存档当前为物理版本 3，未来物理格式升级可能需要重摆旧球桌。
+`.runtime` 包含房间状态、席位凭据和账号存档，已排除在 Git 之外。迁移部署时保留整个数据目录。个人部署记录使用本地 `deployment.json`，格式见 [部署记录示例](deploy/deployment.example.json)。房间存档当前为物理版本 3，未来物理格式升级可能需要重摆旧球桌。
 
 ## 项目结构
 
@@ -135,7 +135,7 @@ deploy/             通用部署模板
 
 ## 开源与致谢
 
-本项目基于 [Arel Kair / Pool](https://github.com/arelkair/pool) 二次开发，上游基准提交为 `f1c0017e219d72bb7c7f1c75bd7db9d3c6d88a88`。保留原作者版权与 [MIT LICENSE](LICENSE)。改造内容包括中文手机操控、服务器统一对战、旋转与摩擦、袋口几何、自由球和稳定方向指引等；来源与变更范围见 [UPSTREAM.md](UPSTREAM.md)。
+本项目基于 [Arel Kair / Pool](https://github.com/arelkair/pool) 二次开发，上游基准提交为 `f1c0017e219d72bb7c7f1c75bd7db9d3c6d88a88`。保留原作者版权与 [MIT LICENSE](LICENSE)。改造内容包括中文手机操控、服务器统一对战、旋转与摩擦、袋口几何、自由球和稳定方向指引等；来源与变更范围见 [UPSTREAM.md](docs/UPSTREAM.md)。
 
 其他开源台球项目的对比和选型过程见 [调研笔记](docs/RESEARCH-2026-11-05.md)。
 

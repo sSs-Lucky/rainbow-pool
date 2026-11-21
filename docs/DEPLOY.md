@@ -24,7 +24,7 @@ npm start
 
 使用环境变量、宿主平台配置或 systemd EnvironmentFile 设置变量。[.env.example](../.env.example) 可以复制为 `.env` 后通过 `node --env-file=.env server.mjs` 使用；普通 npm start 不自动读取该文件。
 
-个人部署记录存于不提交的 deployment.json，格式示例见 [deployment.example.json](../deployment.example.json)。存档含席位凭据，不作为静态资源提供，也不上传 GitHub。
+个人部署记录存于不提交的 deployment.json，格式示例见 [deployment.example.json](../deploy/deployment.example.json)。存档含席位凭据，不作为静态资源提供，也不上传 GitHub。
 
 ## Linux 服务示例
 
