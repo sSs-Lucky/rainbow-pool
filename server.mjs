@@ -6,6 +6,7 @@ import { randomBytes, randomInt } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createAccounts, sameOrigin } from './accounts.mjs';
 import { roomMedia } from './room-media.mjs';
+import { CHAT_HISTORY_LIMIT, chatText } from './src/room-chat.js';
 import { rack, step, allStopped, shoot, placeCueExact, clampTip, evolveCloth } from './src/physics.js';
 import { adjudicateShot, BREAK_CHOICES, isOnEight, otherPlayer, validateEightCall } from './src/shot-rules.js';
 import { POCKETS, pocketAt } from './src/geometry.js';
@@ -24,6 +25,7 @@ const send = (ws, msg) => {
   ws.send(JSON.stringify(msg));
 };
 const media = roomMedia(send, WebSocket.OPEN);
+const chats = new WeakMap();
 const rounded = (n, digits) => Number(n.toFixed(digits));
 const token = () => randomBytes(20).toString('hex');
 const code = () => randomBytes(4).toString('hex').slice(0, 6).toUpperCase();
@@ -116,6 +118,26 @@ function decideBreak(room, choice) {
   room.updated = Date.now(); dirty = true; pushState(room);
 }
 function fail(ws, value) { send(ws, { type: 'error', code: value }); }
+
+function sendChat(ws, room, m) {
+  if (!Number.isSafeInteger(m.requestId) || m.requestId < 1 || room.sockets[ws.player] !== ws) return;
+  const reject = reason => send(ws, { type: 'chatRejected', requestId: m.requestId, reason });
+  const opponent = room.sockets[otherPlayer(ws.player)];
+  if (opponent?.readyState !== WebSocket.OPEN) { reject('offline'); return; }
+  const text = chatText(m.text);
+  if (!text) { reject('invalid'); return; }
+  let chat = chats.get(room);
+  if (!chat) { chat = { messages: [], lastSent: {} }; chats.set(room, chat); }
+  const now = Date.now();
+  if (now - (chat.lastSent[ws.player] ?? 0) < 800) { reject('rate'); return; }
+  chat.lastSent[ws.player] = now;
+  const entry = { player: ws.player, text };
+  chat.messages.push(entry);
+  if (chat.messages.length > CHAT_HISTORY_LIMIT) chat.messages.shift();
+  send(opponent, { type: 'chatMessage', entry });
+  send(ws, { type: 'chatMessage', entry, requestId: m.requestId });
+}
+
 function attach(ws, room, player, profile) {
   room.players ??= {};
   if (!Object.hasOwn(room.players, player)) room.players[player] = profile;
@@ -127,6 +149,7 @@ function attach(ws, room, player, profile) {
   if (room.started) broadcast(room, { type: 'start', groups: room.groups, turn: room.turn });
   pushState(room);
   media.refresh(room);
+  if (room.started) send(ws, { type: 'chatHistory', entries: chats.get(room)?.messages ?? [] });
 }
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.txt': 'text/plain; charset=utf-8' };
 const server = http.createServer((req, res) => {
@@ -181,6 +204,7 @@ wss.on('connection', (ws, req) => {
     }
     const room = ws.room;
     if (!room?.started) return;
+    if (m.type === 'chat') { sendChat(ws, room, m); return; }
     if (m.tip !== undefined && (!m.tip || typeof m.tip !== 'object' || ![m.tip.x, m.tip.y].every(Number.isFinite))) return;
     if (m.type === 'aim') {
       if (room.gameOver || room.turn !== ws.player || room.shooting || room.ballInHand || room.breakDecision) return;

@@ -15,6 +15,7 @@ import { t, applyStatic } from './i18n.js';
 import { DEFAULT_CUE, cueStyle, colorHex, isCueStyle } from './cue-styles.js';
 import { setupProfile } from './profile.js';
 import { setupCallControls } from './call-controls.js';
+import { setupChatControls } from './chat-controls.js';
 
 const game = {
   mode: 'solo', myPlayer: 1, turn: 1, started: false,
@@ -26,7 +27,7 @@ const game = {
   sfxBall: 0, sfxRail: 0, sfxPocket: 0,
 };
 
-let app, ballVisuals, aimLine, placementLine, callMarks, cueVisual, roomCall;
+let app, ballVisuals, aimLine, placementLine, callMarks, cueVisual, roomCall, roomChat;
 const cueModels = new Map();
 let account = null, visibleCueId;
 const CUE_MARGIN = 74;
@@ -107,6 +108,10 @@ async function main() {
     self: game.players[game.myPlayer]?.nickname,
     other: game.players[game.myPlayer === 1 ? 2 : 1]?.nickname,
   }));
+  roomChat = setupChatControls(message => game.net?.send(message), () => ({
+    seat: game.myPlayer, players: game.players,
+  }), roomCall.hidePanel);
+  ui.el('media-toggle').addEventListener('click', roomChat.hidePanel);
   setupProfile(profile => {
     account = profile;
     const shaft = profile?.cue && profile.cue !== DEFAULT_CUE ? colorHex(cueStyle(profile.cue).shaft) : '#3eb9d7';
@@ -644,6 +649,7 @@ function applyState(m) {
   const prevHand = game.ballInHand, prevTurn = game.turn, prevOver = game.gameOver, prevConnected = game.connected;
   const prevSettled = game.settled, prevGroup = game.groups[game.myPlayer];
   game.connected = m.connected.length === 2;
+  roomChat.setOnline(game.connected);
   ui.el('connection').textContent = game.connected ? '双人已连接' : '等待对手重连';
   if (game.started && prevConnected && !game.connected) ui.toast(t('rivalLeft'));
   if (game.started && !prevConnected && game.connected) ui.toast('双方已连接');
@@ -759,6 +765,7 @@ function setupInput() {
 
 function closeNet() {
   roomCall?.close();
+  roomChat?.close();
   playback.clear();
   cueStroke = null;
   game.players = {};
@@ -788,6 +795,7 @@ function onMessage(m) {
   } else if (m.type === 'state' && game.mode !== 'solo') applyState(m);
   else if (m.type === 'rtcReady' && game.mode !== 'solo') roomCall.setSession(m.session, game.myPlayer, m.iceServers, m.keepDevices);
   else if (m.type === 'rtc' && game.mode !== 'solo') roomCall.receive(m);
+  else if (['chatHistory', 'chatMessage', 'chatRejected'].includes(m.type) && game.mode !== 'solo') roomChat.receive(m);
   else if (m.type === 'placeRejected') { placement.pending = false; placement.valid = false; ui.toast('请选择可摆放白球的位置'); }
   else if (m.type === 'shotRejected') { cueStroke = null; game.settled = true; ui.toast('请先指定黑 8 的袋口'); }
   else if (m.type === 'aim' && m.player !== game.myPlayer) { opponentAim.angle = m.angle; opponentAim.power = m.power; opponentAim.tip = clampTip(m.tip); }
@@ -813,6 +821,7 @@ function connectionError(code) {
   ui.setStatus('host-status', message, true); ui.setStatus('join-status', message, true); ui.toast(message);
   game.connected = false;
   roomCall.close();
+  roomChat.setOnline(false);
 }
 function handlers() {
   return { ready: readyRoom, message: onMessage, error: connectionError,
@@ -820,6 +829,7 @@ function handlers() {
     reconnecting: () => {
       game.connected = false;
       roomCall.close();
+      roomChat.setOnline(false);
       ui.el('connection').textContent = '正在重连…';
       ui.setStatus('host-status', '网络连接中断，正在重连…');
       ui.setStatus('join-status', '网络连接中断，正在重连…');

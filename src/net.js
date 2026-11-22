@@ -25,7 +25,11 @@ function connection(action, code, handlers) {
   }
   open();
   return {
-    send(m) { if (ws?.readyState === WebSocket.OPEN && ready) ws.send(JSON.stringify(m)); },
+    send(m) {
+      if (ws?.readyState !== WebSocket.OPEN || !ready) return false;
+      ws.send(JSON.stringify(m));
+      return true;
+    },
     close() { stopped = true; clearTimeout(retry); ws?.close(); },
   };
 }

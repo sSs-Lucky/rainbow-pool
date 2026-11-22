@@ -144,6 +144,38 @@
   }
   .in-game.media-video:has(#balls-left .row){--call-score-space:28px}
 }
+#chat-toggle,#chat-panel{display:none}
+.online-game #chat-toggle{display:block}
+.online-game #chat-panel:not([hidden]){display:flex}
+#chat-toggle{position:relative;white-space:nowrap}
+#chat-badge{position:absolute;top:-5px;right:-5px;min-width:15px;padding:1px 3px;border-radius:8px;background:#e8cc8c;color:#172319;font-size:9px;font-weight:750;text-align:center}
+#chat-panel{--chat-top:50px;position:fixed;top:var(--chat-top);right:max(14px,env(safe-area-inset-right));z-index:14;width:min(334px,calc(100vw - 28px));max-height:calc(100dvh - var(--chat-top) - max(10px,env(safe-area-inset-bottom)));flex-direction:column;gap:9px;padding:12px;overflow:auto;background:#132c23;border:1px solid #628c76a3;border-radius:13px;box-shadow:0 10px 34px #0008}
+#chat-panel header{display:flex;justify-content:space-between;align-items:center;gap:8px}
+#chat-panel h2{margin:0;font-size:15px;color:#eff7ee}
+#chat-panel button{border:1px solid #587b69;border-radius:8px;background:#203e32;color:#eaf5ec;font-size:12px;min-height:33px;padding:5px 9px}
+#chat-panel button:enabled:hover{background:#2c5141}
+#chat-panel button:disabled{cursor:default}
+#chat-log{height:clamp(72px,24dvh,180px);min-height:46px;overflow:auto;background:#0a2019;border:1px solid #53756456;border-radius:9px;padding:8px;display:flex;flex-direction:column;gap:8px}
+#chat-empty{color:#a2baad;font-size:12px;margin:0}
+.chat-entry{align-self:flex-start;max-width:95%;font-size:12px}
+.chat-entry.mine{align-self:flex-end;display:flex;flex-direction:column;align-items:flex-end}
+.chat-entry small{color:#aed3c0;font-size:10px}
+.chat-entry p{margin:3px 0 0;padding:5px 8px;border-radius:7px;background:#203e32;color:#f0f6ef;overflow-wrap:anywhere}
+.chat-entry.mine p{background:#33614a}
+#chat-phrases{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;max-height:200px;overflow:auto}
+#chat-phrases button{text-align:left}
+#chat-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}
+#chat-input{width:100%;border:1px solid #587b69;border-radius:8px;background:#0a2019;color:#eef6ee;padding:6px 8px;font-size:16px}
+#chat-status{font-size:11px;color:#f1d6a9;margin:0}
+#chat-status:empty{display:none}
+@media(max-width:850px){
+  .in-game.media-video #chat-panel{--chat-top:calc(var(--call-video-bottom) + var(--call-score-space) + 8px)}
+}
+@media(max-height:520px) and (orientation:landscape){
+  #chat-panel{--chat-top:40px;gap:6px;padding:8px}
+  #chat-log{height:clamp(56px,21dvh,95px)}
+  #chat-phrases{max-height:72px}
+}
 </style>
 </head>
 <body>
@@ -153,7 +185,14 @@
 <aside id="precision-control" aria-label="精细瞄准与加塞"><span class="precision-title">微调</span><output id="fine-value">0.00°</output><button class="fine-step" id="fine-minus" aria-label="逆时针微调 0.05 度" disabled>−</button><button id="fine-track" type="button" role="slider" aria-label="瞄准角度微调，上下拖动" aria-orientation="vertical" aria-valuemin="-180" aria-valuemax="180" aria-valuenow="0" disabled><span id="fine-handle"></span></button><button class="fine-step" id="fine-plus" aria-label="顺时针微调 0.05 度" disabled>＋</button><span class="precision-foot">上下滑动<br>松手保留方向</span><button id="spin-open" aria-label="设置白球击点与加塞" aria-haspopup="dialog" disabled><span id="spin-dot"></span></button><span id="spin-caption">中杆</span></aside>
 <div id="spin-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="spin-title"><div class="box"><h2 id="spin-title">白球击点</h2><p>点击或拖动红点，选择球杆接触白球的位置。</p><div class="spin-target"><span class="spin-direction top">高杆 · 跟进</span><span class="spin-direction bottom">低杆 · 回拉</span><span class="spin-direction left">左塞</span><span class="spin-direction right">右塞</span><button id="spin-pad" aria-label="白球击点，方向键微调，Home 回中"><span id="spin-pad-dot"></span></button></div><p id="spin-description" aria-live="polite">中杆 · 不加塞</p><p class="spin-help">虚线圈内为可用击点。回拉取决于距离和力度；左右塞主要影响碰球、碰库。</p><div class="row"><button id="spin-reset">回到中杆</button><button class="primary" id="spin-done">确定</button></div></div></div>
 
-<div id="hud"><div class="stats"><span class="pill" id="hud-turn">轮到你</span><span class="pill" id="hud-group">全色球</span><span class="pill"><span data-i18n="shots">击球</span> <b id="hud-shots">0</b></span><span class="pill"><span data-i18n="potted">进球</span> <b id="hud-potted">0/7</b></span><span id="connection"></span><span id="hud-players" hidden></span></div><div class="actions"><button id="call-safety" type="button" aria-pressed="false" hidden>防守杆</button><button id="media-toggle" type="button" aria-expanded="false" aria-controls="media-panel">通话</button><button id="btn-mute" aria-label="切换游戏音效" title="切换游戏音效">🔇</button><button id="btn-fullscreen" title="全屏">全屏</button><button id="btn-restart" data-i18n="restart">再来一局</button><button id="btn-menu" data-i18n="menu">退出</button></div></div>
+<div id="hud"><div class="stats"><span class="pill" id="hud-turn">轮到你</span><span class="pill" id="hud-group">全色球</span><span class="pill"><span data-i18n="shots">击球</span> <b id="hud-shots">0</b></span><span class="pill"><span data-i18n="potted">进球</span> <b id="hud-potted">0/7</b></span><span id="connection"></span><span id="hud-players" hidden></span></div><div class="actions"><button id="call-safety" type="button" aria-pressed="false" hidden>防守杆</button><button id="chat-toggle" type="button" aria-expanded="false" aria-controls="chat-panel">聊天<span id="chat-badge" aria-hidden="true" hidden></span></button><button id="media-toggle" type="button" aria-expanded="false" aria-controls="media-panel">通话</button><button id="btn-mute" aria-label="切换游戏音效" title="切换游戏音效">🔇</button><button id="btn-fullscreen" title="全屏">全屏</button><button id="btn-restart" data-i18n="restart">再来一局</button><button id="btn-menu" data-i18n="menu">退出</button></div></div>
+<section id="chat-panel" aria-labelledby="chat-title" hidden>
+  <header><h2 id="chat-title">球桌聊天</h2><button id="chat-close" type="button">关闭</button></header>
+  <div id="chat-log" role="log" aria-label="聊天记录" tabindex="0"><p id="chat-empty">还没有消息</p></div>
+  <div id="chat-phrases" aria-label="常用语" role="group"></div>
+  <form id="chat-form"><input id="chat-input" type="text" aria-label="输入聊天消息" placeholder="输入短句" autocomplete="off" maxlength="160" enterkeyhint="send"><button id="chat-send" type="submit" disabled>发送</button></form>
+  <p id="chat-status" role="status"></p>
+</section>
 <section id="media-panel" aria-label="语音与视频" hidden>
   <div class="devices"><button id="media-audio" type="button" aria-pressed="false" disabled>开启麦克风</button><button id="media-video" type="button" aria-pressed="false" disabled>开启摄像头</button></div>
   <p id="media-status" role="status"></p>

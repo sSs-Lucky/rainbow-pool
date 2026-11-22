@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { WebSocket } from 'ws';
 import { BALL_R, HEAD_STRING } from '../src/config.js';
 import { POCKETS } from '../src/geometry.js';
+import { CHAT_MAX_LENGTH, QUICK_PHRASES } from '../src/room-chat.js';
 const base = process.env.POOL_TEST_URL || 'http://127.0.0.1:3000';
 const endpoint = base.replace(/^http/, 'ws') + '/ws';
 const browserOrigin = process.env.POOL_TEST_BROWSER_ORIGIN || new URL(base).origin;
@@ -61,6 +62,37 @@ async function place(c, x, y, confirm = true) {
   c.send({ type: 'place', x, y, confirm });
   return state(c, m => m.ballInHand === !confirm && !m.cuePotted && m.balls[0].x === x && m.balls[0].y === y);
 }
+
+test('room chat sends presets and typed text to both seats, validates messages and restores recent history', { timeout: 25000 }, async t => {
+  const { host, guest, make, initial, players, reconnect } = await connectMatch(t);
+  const outsider = make();
+  await outsider.opened;
+  outsider.send({ action: 'create' });
+  await outsider.wait(m => m.type === 'ready');
+  outsider.send({ type: 'chat', text: '隔壁房间', requestId: 1 });
+
+  const sender = opponent(initial.turn);
+  const first = players[sender], second = players[initial.turn];
+  const quick = QUICK_PHRASES.find(phrase => phrase.includes('一杆清台'));
+  first.send({ type: 'chat', requestId: 1, player: initial.turn, text: quick });
+  const echoed = await first.wait(m => m.type === 'chatMessage' && m.requestId === 1);
+  assert.deepEqual(echoed.entry, { player: sender, text: quick });
+  assert.deepEqual((await second.wait(m => m.type === 'chatMessage' && m.entry.text === quick)).entry, echoed.entry);
+
+  first.send({ type: 'chat', requestId: 2, text: '发得太快' });
+  assert.equal((await first.wait(m => m.type === 'chatRejected' && m.requestId === 2)).reason, 'rate');
+  second.send({ type: 'chat', requestId: 3, text: '球'.repeat(CHAT_MAX_LENGTH + 1) });
+  assert.equal((await second.wait(m => m.type === 'chatRejected' && m.requestId === 3)).reason, 'invalid');
+  second.send({ type: 'chat', requestId: 4, text: '  这杆打得漂亮 🥳  ' });
+  const reply = await first.wait(m => m.type === 'chatMessage' && m.entry.player === initial.turn);
+  assert.deepEqual(reply.entry, { player: initial.turn, text: '这杆打得漂亮 🥳' });
+  assert.equal(outsider.messages.some(m => m.type === 'chatMessage' || m.type === 'chatHistory'), false);
+  assert.equal([...host.messages, ...guest.messages].some(m => m.entry?.text === '隔壁房间'), false);
+
+  const recovered = await reconnect(sender);
+  const history = await recovered.wait(m => m.type === 'chatHistory');
+  assert.deepEqual(history.entries, [echoed.entry, reply.entry]);
+});
 
 test('call signals stay between current seats and stale signals are dropped after a retry or reconnect', { timeout: 12000 }, async t => {
   const { host, guest, make, reconnect } = await connectMatch(t);

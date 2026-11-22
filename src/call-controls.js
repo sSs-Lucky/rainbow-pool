@@ -80,13 +80,17 @@ export function setupCallControls(send, labels) {
   }
 
   const call = new RoomCall({ send, update: render });
+  function hidePanel() {
+    panel.hidden = true;
+    toggle.setAttribute('aria-expanded', 'false');
+  }
   toggle.onclick = () => {
     panel.hidden = !panel.hidden;
     toggle.setAttribute('aria-expanded', String(!panel.hidden));
     if (!panel.hidden) play();
   };
   panel.addEventListener('keydown', event => {
-    if (event.key === 'Escape') { panel.hidden = true; toggle.setAttribute('aria-expanded', 'false'); toggle.focus(); }
+    if (event.key === 'Escape') { hidePanel(); toggle.focus(); }
   });
   el('media-audio').onclick = () => { play(); call.toggle('audio'); };
   el('media-video').onclick = () => { play(); call.toggle('video'); };
@@ -101,10 +105,10 @@ export function setupCallControls(send, labels) {
     receive(m) {
       if (supported) call.receive(m);
     },
+    hidePanel,
     close() {
       call.setSession(null);
-      panel.hidden = true;
-      toggle.setAttribute('aria-expanded', 'false');
+      hidePanel();
     },
   };
 }
