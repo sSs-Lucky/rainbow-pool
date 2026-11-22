@@ -117,13 +117,13 @@
 .online-game #media-panel:not([hidden]){display:grid}
 .online-game #media-videos:not([hidden]){display:flex}
 #hud #media-toggle.active,#media-panel button[aria-pressed="true"]{border-color:#7ddeab99;color:#c8f9d8;background:#285b416c}
-#media-panel{position:fixed;top:50px;right:max(14px,env(safe-area-inset-right));z-index:14;width:min(262px,calc(100vw - 28px));gap:8px;padding:12px;background:#132c23;border:1px solid #628c76a3;border-radius:13px;box-shadow:0 10px 34px #0008}
+#media-panel{position:fixed;top:var(--room-panel-top);right:var(--hud-right);z-index:14;width:min(262px,calc(100vw - 28px));gap:8px;padding:12px;background:#132c23;border:1px solid #628c76a3;border-radius:13px;box-shadow:0 10px 34px #0008}
 #media-panel .devices{display:grid;grid-template-columns:1fr 1fr;gap:7px}
 #media-panel button{min-height:35px;border:1px solid #587b69;border-radius:8px;background:#203e32;color:#eaf5ec;font-size:12px;padding:6px}
 #media-panel button[hidden]{display:none}
 #media-panel #media-status{color:#adcbba;font-size:11px;line-height:1.5;margin:0}
 .in-game.media-video{
-  --call-video-top:max(50px,calc(env(safe-area-inset-top) + 48px));
+  --call-video-top:var(--room-panel-top);
   --call-video-width:clamp(90px,12vw,132px);
   --call-video-bottom:calc(var(--call-video-top) + var(--call-video-width) * .5625);
   --call-score-space:0px;
@@ -142,19 +142,16 @@
   .in-game.media-video #media-panel{top:calc(var(--call-video-bottom) + var(--call-score-space) + 8px)}
 }
 @media(max-height:520px) and (orientation:landscape){
-  #media-panel{top:39px;padding:9px}
-  .in-game.media-video{
-    --call-video-top:max(44px,calc(env(safe-area-inset-top) + 42px));
-    --call-video-width:clamp(68px,11vw,88px);
-  }
+  #media-panel{padding:9px}
+  .in-game.media-video{--call-video-width:clamp(68px,11vw,88px)}
   .in-game.media-video:has(#balls-left .row){--call-score-space:28px}
 }
 #chat-toggle,#chat-panel{display:none}
 .online-game #chat-toggle{display:block}
 .online-game #chat-panel:not([hidden]){display:flex}
 #chat-toggle{position:relative;white-space:nowrap}
-#chat-badge{position:absolute;top:-5px;right:-5px;min-width:15px;padding:1px 3px;border-radius:8px;background:#e8cc8c;color:#172319;font-size:9px;font-weight:750;text-align:center}
-#chat-panel{--chat-top:50px;position:fixed;top:var(--chat-top);right:max(14px,env(safe-area-inset-right));z-index:14;width:min(334px,calc(100vw - 28px));max-height:calc(100dvh - var(--chat-top) - max(10px,env(safe-area-inset-bottom)));flex-direction:column;gap:9px;padding:12px;overflow:auto;background:#132c23;border:1px solid #628c76a3;border-radius:13px;box-shadow:0 10px 34px #0008}
+#chat-badge{position:absolute;top:-5px;right:-5px;min-width:15px;padding:1px 3px;border-radius:8px;background:#e8cc8c;color:#172319;font-size:9px;font-weight:750;text-align:center;pointer-events:none}
+#chat-panel{--chat-top:var(--room-panel-top);position:fixed;top:var(--chat-top);right:var(--hud-right);z-index:14;width:min(334px,calc(100vw - 28px));max-height:calc(100dvh - var(--chat-top) - max(10px,env(safe-area-inset-bottom)));flex-direction:column;gap:9px;padding:12px;overflow:auto;background:#132c23;border:1px solid #628c76a3;border-radius:13px;box-shadow:0 10px 34px #0008}
 #chat-panel header{display:flex;justify-content:space-between;align-items:center;gap:8px}
 #chat-panel h2{margin:0;font-size:15px;color:#eff7ee}
 #chat-panel button{border:1px solid #587b69;border-radius:8px;background:#203e32;color:#eaf5ec;font-size:12px;min-height:33px;padding:5px 9px}
@@ -179,7 +176,7 @@
 .installed-app #btn-fullscreen{display:none}
 @media(max-width:600px) and (orientation:portrait){.menu-right{width:100%}}
 .installed-app #hint{bottom:max(8px,env(safe-area-inset-bottom))}
-.installed-app #hud{top:env(safe-area-inset-top)}
+.installed-app{--hud-top:env(safe-area-inset-top,0px)}
 @media(max-height:520px) and (orientation:landscape){
   .installed-app #app{margin-bottom:env(safe-area-inset-bottom)}
   .installed-app #call-bar,.installed-app #break-bar{bottom:max(5px,env(safe-area-inset-bottom))}
@@ -187,8 +184,27 @@
 @media(max-width:850px){
   .in-game.media-video #chat-panel{--chat-top:calc(var(--call-video-bottom) + var(--call-score-space) + 8px)}
 }
+/* Keep the two touch targets above the table and their panels below the full HUD. */
+body{
+  --hud-top:0px;
+  --hud-height:48px;
+  --hud-bottom:calc(var(--hud-top) + var(--hud-height));
+  --room-panel-top:calc(var(--hud-bottom) + 4px);
+  --hud-right:max(15px,calc(env(safe-area-inset-right,0px) + 6px));
+}
+#hud{top:var(--hud-top);min-height:var(--hud-height);padding-right:var(--hud-right);z-index:8}
+#hud .stats{min-width:0;overflow:hidden}
+#hud .actions{flex-shrink:0}
+#hud button{white-space:nowrap}
+#hud :is(#chat-toggle,#media-toggle){touch-action:none;-webkit-user-select:none;user-select:none}
+#hud :is(#chat-toggle,#media-toggle):is(:active,[aria-expanded="true"]){background:#285b41;border-color:#7ddeab99;color:#e6f8e9}
+.online-game #balls-left{top:var(--hud-bottom)}
 @media(max-height:520px) and (orientation:landscape){
-  #chat-panel{--chat-top:40px;gap:6px;padding:8px}
+  body{--hud-height:40px}
+  .online-game{--hud-height:54px}
+  #hud :is(#chat-toggle,#media-toggle){min-width:44px;min-height:44px}
+  .in-game.online-game:not(.media-video) #app{top:calc(var(--hud-bottom) + 29px)}
+  #chat-panel{gap:6px;padding:8px}
   #chat-log{height:clamp(56px,21dvh,95px)}
   #chat-phrases{max-height:72px}
 }
