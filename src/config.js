@@ -26,7 +26,7 @@ export const CUSHION_NOSE_HEIGHT = 1.4; // height above slate, in ball radii
 export const BALL_RESTITUTION = 0.94;
 export const MAX_SHOT_SPEED = 7; // m/s at centre-ball; UI energy limit
 export const MAX_TIP_OFFSET = 0.5; // fraction of ball radius, avoids miscue region
-export const POWER_CURVE = 1.6;
+export const POWER_CURVE = 1.35; // baseline curve used by the existing shoot message
 
 export const MAX_DRAG = 210;
 export const MIN_DRAG = 10;

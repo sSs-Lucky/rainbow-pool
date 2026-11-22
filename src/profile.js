@@ -107,13 +107,36 @@ export function setupProfile(onChange, preview) {
         card.type = 'button';
         card.className = 'cue-card';
         card.style.setProperty('--cue-accent', colorHex(style.inlay));
+        const heading = document.createElement('div');
+        heading.className = 'cue-card-heading';
         const title = document.createElement('strong');
         title.textContent = style.name;
+        const effect = document.createElement('span');
+        effect.className = 'cue-effect-name';
+        effect.textContent = style.effectName;
+        heading.append(title, effect);
         const detail = document.createElement('span');
         detail.textContent = style.description;
+        const stats = document.createElement('dl');
+        stats.className = 'cue-stats';
+        const { maxSpeed, powerCurve, maxTipOffset } = style.shot;
+        const values = [
+          ['25% 力度', `${(maxSpeed * .25 ** powerCurve).toFixed(2)} m/s`],
+          ['满力', `${maxSpeed.toFixed(2)} m/s`],
+          ['击点上限', `${Math.round(maxTipOffset * 100)}%`],
+        ];
+        for (const [label, value] of values) {
+          const stat = document.createElement('div');
+          const term = document.createElement('dt');
+          const valueNode = document.createElement('dd');
+          term.textContent = label;
+          valueNode.textContent = value;
+          stat.append(term, valueNode);
+          stats.appendChild(stat);
+        }
         const art = preview(id);
         art.setAttribute('aria-hidden', 'true');
-        card.append(art, title, detail);
+        card.append(art, heading, detail, stats);
         card.setAttribute('aria-pressed', String(profile.cue === id));
         card.onclick = () => select(id);
         picker.appendChild(card);

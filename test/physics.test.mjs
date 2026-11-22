@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { rack, shoot, step, allStopped, evolveCloth, resolveBallCollision, resolveCushion, energy, clampTip, placeCue } from '../src/physics.js';
-import { PHYSICAL_R as R, PIXELS_PER_METRE as SCALE, BALL_MASS as M, BALL_RESTITUTION as E, GRAVITY as G, SLIDING_FRICTION as MU, SPIN_DECELERATION } from '../src/config.js';
+import { PHYSICAL_R as R, PIXELS_PER_METRE as SCALE, BALL_MASS as M, BALL_RESTITUTION as E, GRAVITY as G, SLIDING_FRICTION as MU, SPIN_DECELERATION, POWER_CURVE } from '../src/config.js';
+import { cueStyle } from '../src/cue-styles.js';
 import { POCKETS, CUSHION_SEGMENTS, validPlacement } from '../src/geometry.js';
 const ball = (x=280,y=280,number=0) => ({x,y,number,vx:0,vy:0,wx:0,wy:0,wz:0,potted:false});
 const near = (a,b,tol=1e-8) => assert.ok(Math.abs(a-b)<tol, `${a} ≈ ${b}`);
@@ -38,6 +39,22 @@ test('tip offset obeys angular impulse, safe circle and fixed energy budget', ()
   const center=ball(),spin=ball(); shoot(center,1,0,.5); shoot(spin,1,0,.5,{x:.3,y:.4});
   near(energy(center),energy(spin)); near(R*spin.wy/spin.vx,1); near(R*spin.wz/spin.vx,.75);
   near(Math.hypot(...Object.values(clampTip({x:1,y:1}))),.5);
+});
+test('each cue reproduces its catalog speed and caps the off-center hit without adding energy', () => {
+  for (const [id, quarter, full, limit] of [
+    ['aurora', 1.08, 7, .48], ['maple', .72, 6.65, .45], ['ember', .91, 7.45, .40],
+    ['jade', 1.27, 6.8, .50], ['ocean', 1.20, 7.25, .43], ['pearl', 1.40, 6.45, .47],
+  ]) {
+    const { shot } = cueStyle(id);
+    const center = ball(), spin = ball();
+    shoot(center, 1, 0, .25 ** POWER_CURVE, undefined, shot);
+    assert.equal(Number(center.vx.toFixed(2)), quarter, id);
+    shoot(center, 1, 0, 1, undefined, shot);
+    shoot(spin, 1, 0, 1, { x: 1, y: 0 }, shot);
+    near(center.vx, full);
+    near(R * spin.wz / spin.vx, 2.5 * limit);
+    near(energy(spin), energy(center));
+  }
 });
 test('level side spin does not invent a free-flight sideways curve', () => {
   const b=ball(); shoot(b,1,0,.3,{x:.5,y:0});

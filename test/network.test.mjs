@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { WebSocket } from 'ws';
-import { BALL_R, HEAD_STRING } from '../src/config.js';
+import { BALL_R, HEAD_STRING, PHYSICAL_R, POWER_CURVE } from '../src/config.js';
 import { POCKETS } from '../src/geometry.js';
 import { traceAim } from '../src/aiming.js';
 import { groupOf } from '../src/shot-rules.js';
@@ -179,6 +179,22 @@ test('account cue choices survive login and both seats receive public nicknames 
     const match = await state(seat, m => m.connected.length === 2);
     assert.deepEqual(match.players, { 1: { nickname, cue: 'jade' }, 2: null });
   }
+  // Changing equipment in the profile affects new seats, while this room keeps its original cue.
+  assert.deepEqual(await (await request('profile', 'PATCH', { cue: 'ember' }, loginCookie)).json(),
+    { profile: { nickname, cue: 'ember' } });
+  if (host.state().turn !== 1) {
+    const offset = host.messages.length;
+    host.send({ type: 'restart' });
+    await state(host, m => m.turn === 1 && m.ballInHand, offset);
+  }
+  await place(host, HEAD_STRING - BALL_R, 280);
+  host.send({ type: 'aim', angle: 0, power: .25, tip: { x: 1, y: 0 } });
+  assert.deepEqual((await guest.wait(m => m.type === 'aim')).tip, { x: .5, y: 0 });
+  host.send({ type: 'shoot', dx: 1, dy: 0, power: .25 ** POWER_CURVE, tip: { x: 1, y: 0 }, cue: 'pearl' });
+  const launch = (await state(guest, m => m.shots === 1 && !m.settled)).balls[0];
+  const speed = 6.8 * .25 ** 1.21 / Math.sqrt(1 + 2.5 * .5 ** 2);
+  assert.ok(Math.abs(launch.vx - speed) < .0001);
+  assert.ok(Math.abs(launch.wz - 2.5 * .5 * speed / PHYSICAL_R) < .001);
   await request('logout', 'POST', null, loginCookie);
   assert.deepEqual(await (await request('profile', 'GET', null, loginCookie)).json(), { profile: null });
   assert.equal((await fetch(base + '/.runtime/accounts.json')).status, 404);
@@ -207,10 +223,10 @@ test('both seats sync 3D rotation; break pots stay open until a normal pot assig
   assert.equal(active.messages.filter(m => m.type === 'aim').length, 0);
   assert.equal(active.state().shots, 0);
 
-  active.send({ type: 'aim', angle: .12, power: .6, tip: { x: .3, y: -.4 } });
+  active.send({ type: 'aim', angle: .12, power: .6, tip: { x: .24, y: -.32 } });
   const aim = await passive.wait(m => m.type === 'aim');
   assert.equal(aim.player, breaker);
-  assert.deepEqual(aim.tip, { x: .3, y: -.4 });
+  assert.deepEqual(aim.tip, { x: .24, y: -.32 });
   shoot(active, 1, 0, .85);
   await state(passive, m => m.shots === 1 && !m.settled && m.balls[0].q?.length === 4);
   const broken = await settled(active, 1);

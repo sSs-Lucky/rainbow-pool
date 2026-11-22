@@ -1,12 +1,43 @@
 export const DEFAULT_CUE = 'aurora';
 
 export const CUE_STYLES = Object.freeze({
-  aurora: { name: '极光', description: '蓝紫镶线 · 碳纤维握把', shaft: 0x59748f, body: 0x7561a2, grip: 0x111925, inlay: 0x60cde7 },
-  maple: { name: '蜜色枫木', description: '天然木纹 · 铜色接环', shaft: 0xe4bd7d, body: 0x9a5430, grip: 0xb78044, inlay: 0xffdd9a, ring: 0xf1c16e, pattern: 'grain' },
-  ember: { name: '赤焰', description: '酒红漆面 · 银色尖镶', shaft: 0x7c7e89, body: 0xcf3250, grip: 0x25151e, inlay: 0xff9b76, ring: 0xe4dee9, pattern: 'points' },
-  jade: { name: '翡翠', description: '翠绿漆面 · 浅色菱镶', shaft: 0xccab79, body: 0x25a778, grip: 0x1a3430, inlay: 0xc6f49b, ring: 0xf0d99a, pattern: 'diamonds' },
-  ocean: { name: '深海蓝', description: '蓝色珍珠光 · 银色环纹', shaft: 0x83b5d9, body: 0x2679d6, grip: 0x172954, inlay: 0xa6eeff, ring: 0xc8edff, pattern: 'waves' },
-  pearl: { name: '月白', description: '珍珠白漆面 · 黑色握把', shaft: 0xd8e6ec, body: 0xebeadb, grip: 0x282b35, inlay: 0x777182, ring: 0xe4ccb2, pattern: 'windows' },
+  aurora: {
+    name: '极光', effectName: '折光棱镜', description: '均衡手感，适合日常对局',
+    shaft: 0x7291ca, body: 0x5e63b7, grip: 0x273449, inlay: 0x76e5f2, ring: 0x98bffc,
+    buttRadius: 7.5, tipRadius: 2.35, bands: [[-348, 11], [-256, 5], [-246, 2], [-101, 6], [-16, 11]],
+    shot: { maxSpeed: 7, powerCurve: 1.35, maxTipOffset: .48 },
+  },
+  // Keep the stored ID so existing accounts retain the equivalent cue.
+  maple: {
+    name: '砂岩', effectName: '流沙风纹', description: '轻推力度好掌握，适合贴库走位',
+    shaft: 0xc9c1ae, body: 0x927e67, grip: 0x4a443d, inlay: 0xf0d4aa, ring: 0xc1b4a0, pattern: 'sand',
+    buttRadius: 6.8, tipRadius: 2.15, bands: [[-348, 12], [-253, 3], [-245, 3], [-109, 4], [-16, 11]],
+    shot: { maxSpeed: 6.65, powerCurve: 1.60, maxTipOffset: .45 },
+  },
+  ember: {
+    name: '熔岩', effectName: '盘杆火龙', description: '满力速度最高，适合开球',
+    shaft: 0xff321d, inlay: 0xff7550, pattern: 'lava',
+    buttRadius: 11.2, tipRadius: 2.95,
+    shot: { maxSpeed: 7.45, powerCurve: 1.52, maxTipOffset: .40 },
+  },
+  jade: {
+    name: '翡翠', effectName: '翡翠灵藤', description: '加塞范围最大，适合旋转走位',
+    shaft: 0x9fb8a5, body: 0x238259, grip: 0x26443b, inlay: 0xb1f18b, ring: 0xdbcf94, pattern: 'diamonds',
+    buttRadius: 7.8, tipRadius: 2.35, bands: [[-348, 10], [-257, 5], [-244, 3], [-98, 5], [-16, 11]],
+    shot: { maxSpeed: 6.8, powerCurve: 1.21, maxTipOffset: .50 },
+  },
+  ocean: {
+    name: '深海蓝', effectName: '盘杆水蛇', description: '中高力度出球快，适合长台',
+    shaft: 0x5873cb, body: 0x4137ad, grip: 0x242853, inlay: 0x9ea5ff, ring: 0x9cb9f4, pattern: 'waves',
+    buttRadius: 8.7, tipRadius: 2.45, bands: [[-348, 10], [-256, 7], [-100, 8], [-16, 11]],
+    shot: { maxSpeed: 7.25, powerCurve: 1.30, maxTipOffset: .43 },
+  },
+  pearl: {
+    name: '月白', effectName: '日月同辉', description: '小幅拉杆就能出力，低段灵敏',
+    shaft: 0xd2dbe7, body: 0xe8e6dc, grip: 0x858d9f, inlay: 0xb8a6f5, ring: 0xcbd8e1, pattern: 'windows',
+    buttRadius: 5.55, tipRadius: 1.85, bands: [[-348, 8], [-253, 3], [-102, 3], [-14, 9]],
+    shot: { maxSpeed: 6.45, powerCurve: 1.10, maxTipOffset: .47 },
+  },
 });
 
 export function isCueStyle(id) {

@@ -1,6 +1,6 @@
-import { BALL_R, MAX_TIP_OFFSET, POCKET_CAPTURE_R } from './config.js';
+import { BALL_R, POCKET_CAPTURE_R, POWER_CURVE } from './config.js';
 import { CUSHION_SEGMENTS, POCKETS } from './geometry.js';
-import { shoot, evolveCloth, resolveBallCollision } from './physics.js';
+import { shoot, clampTip, evolveCloth, resolveBallCollision } from './physics.js';
 import { isBlockedTarget } from './shot-rules.js';
 
 export function powerFromPull(start, current, travel) {
@@ -8,10 +8,9 @@ export function powerFromPull(start, current, travel) {
   return Math.min(1, Math.max(0, (current - start) / travel));
 }
 export const fineAngle = (angle, pixels) => angle + pixels * Math.PI / 180 * .02;
-export function tipFromPoint(x, y, radius) {
+export function tipFromPoint(x, y, radius, maxOffset) {
   if (![x, y, radius].every(Number.isFinite) || radius <= 0) return { x: 0, y: 0 };
-  const length = Math.hypot(x, y), factor = length > radius * MAX_TIP_OFFSET ? radius * MAX_TIP_OFFSET / length : 1;
-  return { x: x * factor / radius, y: -y * factor / radius };
+  return clampTip({ x: x / radius, y: -y / radius }, maxOffset);
 }
 function circleHit(x, y, dx, dy, cx, cy, radius) {
   const rx = cx - x, ry = cy - y, along = rx * dx + ry * dy;
@@ -44,13 +43,13 @@ export function traceAim(cue, balls, angle, maxLength = 1100) {
 }
 // A direction aid uses one fixed reference strike, never the live power slider.
 // Only the initial collision is shown; this is not a prediction of travel distance.
-export function predictDirections(cue, balls, angle, tip = { x: 0, y: 0 }, group = null, onEight = false) {
+export function predictDirections(cue, balls, angle, tip = { x: 0, y: 0 }, group = null, onEight = false, shot) {
   const trace = traceAim(cue, balls, angle);
   const blocked = isBlockedTarget(trace.target?.number, group, onEight);
   const noDirection = { trace, blocked, objectDirection: null };
   if (!trace.target || blocked) return noDirection;
   const start = { ...cue };
-  shoot(start, Math.cos(angle), Math.sin(angle), Math.pow(.65, 1.35), tip);
+  shoot(start, Math.cos(angle), Math.sin(angle), .65 ** POWER_CURVE, tip, shot);
   const dx = Math.cos(angle), dy = Math.sin(angle);
   const advance = t => { const b = { ...start }; evolveCloth(b, t); return b; };
   const distance = b => (b.x - cue.x) * dx + (b.y - cue.y) * dy;

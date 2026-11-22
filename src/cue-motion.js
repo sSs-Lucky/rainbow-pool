@@ -29,6 +29,7 @@ export function startCueStroke(now, power, travel) {
   return {
     startedAt: now,
     impactAt: now + 76 + 48 * power,
+    pullPower: power,
     pull: cueAimGap(power, travel),
     followThrough: 6 + 20 * power,
     recoveryGap: cueAimGap(.72, travel),

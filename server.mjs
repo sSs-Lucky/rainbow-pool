@@ -7,6 +7,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createAccounts, sameOrigin } from './accounts.mjs';
 import { roomMedia } from './room-media.mjs';
 import { CHAT_HISTORY_LIMIT, chatText } from './src/room-chat.js';
+import { cueStyle } from './src/cue-styles.js';
 import { rack, step, allStopped, shoot, placeCueExact, clampTip, evolveCloth } from './src/physics.js';
 import { traceAim } from './src/aiming.js';
 import { adjudicateShot, BREAK_CHOICES, isOnEight, isBlockedTarget, otherPlayer, validateEightCall } from './src/shot-rules.js';
@@ -210,8 +211,9 @@ wss.on('connection', (ws, req) => {
     if (m.type === 'aim') {
       if (room.gameOver || room.turn !== ws.player || room.shooting || room.ballInHand || room.breakDecision) return;
       if (!Number.isFinite(m.angle) || !Number.isFinite(m.power)) return;
+      const { maxTipOffset } = cueStyle(room.players?.[ws.player]?.cue).shot;
       for (const peer of Object.values(room.sockets)) if (peer !== ws) send(peer, { type: 'aim', player: ws.player,
-        angle: Math.atan2(Math.sin(m.angle), Math.cos(m.angle)), power: Math.min(1, Math.max(0, m.power)), tip: clampTip(m.tip) });
+        angle: Math.atan2(Math.sin(m.angle), Math.cos(m.angle)), power: Math.min(1, Math.max(0, m.power)), tip: clampTip(m.tip, maxTipOffset) });
       return;
     }
     if (m.type === 'restart') {
@@ -244,7 +246,8 @@ wss.on('connection', (ws, req) => {
       clearShot(room);
       room.called = call;
       room.onEight = onEight;
-      shoot(cue, m.dx, m.dy, Math.min(1, Math.max(0, m.power)), clampTip(m.tip));
+      const { shot } = cueStyle(room.players?.[ws.player]?.cue);
+      shoot(cue, m.dx, m.dy, m.power, m.tip, shot);
       room.shots++; room.shooting = true; room.reason = '';
       room.updated = Date.now(); dirty = true; pushState(room);
     }

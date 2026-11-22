@@ -98,13 +98,19 @@
 #auth-form small{color:#9bb7a6;font-size:11px}
 .profile-feedback{min-height:1.45em;margin:0;color:#f4d5a8;font-size:12px}
 .profile-dialog .glass{padding:8px;min-height:38px}
-#cue-catalog{width:min(740px,calc(100vw - 24px))}
+#cue-catalog{width:min(840px,calc(100vw - 24px))}
 #cue-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
-.cue-card{display:grid;grid-template-rows:38px auto auto;justify-items:start;gap:5px;min-width:0;padding:10px 11px;background:#142e23;border:1px solid #4d756756;border-radius:12px;color:#ebf6ed;text-align:left}
+.cue-card{display:grid;grid-template-rows:46px auto 1fr auto;justify-items:start;gap:6px;min-width:0;padding:10px 11px;background:#142e23;border:1px solid #4d756756;border-radius:12px;color:#ebf6ed;text-align:left}
 .cue-card:hover,.cue-card[aria-pressed="true"]{border-color:var(--cue-accent);background:#1f3c31}
 .cue-card[aria-pressed="true"] strong::after{content:' ✓';color:var(--cue-accent)}
-.cue-card canvas{align-self:center;width:100%;height:auto;display:block}
+.cue-card canvas{align-self:center;width:100%;height:46px;object-fit:contain;display:block}
 .cue-card strong{font-size:14px}.cue-card span{font-size:11px;color:#a8c6b4}
+.cue-card-heading{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 8px}
+.cue-card .cue-effect-name{color:var(--cue-accent)}
+.cue-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;width:100%;margin:4px 0 0;padding-top:8px;border-top:1px solid var(--line)}
+.cue-stats dt{font-size:10px;color:#a8c6b4}
+.cue-stats dd{margin:3px 0 0;color:#f1f4e6;font-size:11px;font-weight:650;font-variant-numeric:tabular-nums}
+#spin-pad::before{inset:var(--tip-inset,25%)}
 @media(max-width:500px){#cue-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cue-card{padding:9px 8px}.profile-dialog{padding:15px}}
 @media(max-height:520px) and (orientation:landscape){.profile-bar{min-height:33px;padding:0 0 5px;margin-bottom:7px}.profile-actions button{padding:5px 9px}#hud-players{max-width:19vw}}
 @media(max-height:520px) and (orientation:landscape){

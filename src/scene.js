@@ -4,6 +4,7 @@ import { pocketPositions } from './physics.js';
 import { predictDirections } from './aiming.js';
 import { CUSHION_POLYGONS } from './geometry.js';
 import { cueStyle } from './cue-styles.js';
+import { createCueEffects } from './cue-effects.js';
 
 export function drawTable() {
   const g = new Graphics();
@@ -128,49 +129,78 @@ export function createFlatBalls() {
     return visual;
   });
 }
-export function buildCueVisual(styleId) {
-  const { shaft, body, grip, inlay, ring, pattern } = cueStyle(styleId);
+export function buildCueVisual(styleId, headTexture) {
+  const { shaft, body, grip, inlay, ring, pattern, buttRadius, tipRadius, bands } = cueStyle(styleId);
   const cue = new Container();
   const gradient = stops => new FillGradient({
     type: 'linear', start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, textureSpace: 'local',
     colorStops: stops.map(([offset, color]) => ({ offset, color })),
   });
-  const shadow = new Graphics().poly([-352, 3, -344, 13, -4, 5, 0, 2]).fill({ color: 0x00120f, alpha: .38 });
+  const shade = (color, amount) => {
+    const channel = shift => Math.round(((color >> shift) & 255) * amount);
+    return (channel(16) << 16) | (channel(8) << 8) | channel(0);
+  };
+  const finish = color => gradient([[0, shade(color, .54)], [.32, color], [.54, shade(color, .87)], [1, shade(color, .38)]]);
+  const radiusAt = x => tipRadius + (buttRadius - tipRadius) * -x / 350;
+  const shadow = new Graphics().poly([-352, 2, -345, buttRadius + 5, -4, tipRadius + 2, 0, 1])
+    .fill({ color: 0x00120f, alpha: .35 });
   const stick = new Graphics();
-  stick.poly([-347, -7, -347, 7, -10, 2.4, -10, -2.4])
-    .fill(gradient([[0, 0x101926], [.32, shaft], [.5, pattern ? shaft : 0x293d52], [.76, 0x142432], [1, 0x090e18]]));
-  stick.poly([-239, -5.3, -239, 5.3, -95, 3.5, -95, -3.5])
-    .fill(gradient([[0, 0x252149], [.32, body], [.53, pattern ? body : 0x302d60], [.81, 0x26304e], [1, 0x151a2e]]));
-  drawCueInlay(stick, pattern, inlay);
-  stick.poly([-336, -6.8, -336, 6.8, -251, 5.5, -251, -5.5]).fill(grip);
-  for (let x = -333; x <= -260; x += 5) {
-    if (pattern === 'grain') stick.moveTo(x - 2, -4.2).lineTo(x + 8, -1).lineTo(x + 12, 4.4);
-    else stick.moveTo(x, -4.8).lineTo(x + 4, 0).lineTo(x, 4.8);
+  const taper = (from, to, paint) => {
+    const rear = radiusAt(from), front = radiusAt(to);
+    stick.poly([from, -rear, from, rear, to, front, to, -front]).fill(paint);
+  };
+  if (pattern === 'lava') {
+    taper(-350, 0, gradient([[0, 0xad071d], [.19, 0xff492c], [.34, 0xff7852], [.49, shaft],
+      [.76, 0xc00822], [1, 0x81051c]]));
+    stick.roundRect(-5, -tipRadius, 5, tipRadius * 2, 1.3).fill(inlay);
+  } else {
+    taper(-350, -4, finish(shaft));
+    taper(-257, -97, finish(body));
+    taper(-337, -251, finish(grip));
+    for (let x = -330; x <= -259; x += 5) {
+      const radius = radiusAt(x) * .68;
+      stick.moveTo(x, -radius).lineTo(x + 3, 0).lineTo(x, radius);
+    }
+    stick.stroke({ color: ring, width: .85, alpha: .43 });
+    for (const [x, width] of bands) {
+      const radius = radiusAt(x + width / 2) + .45;
+      stick.roundRect(x, -radius, width, radius * 2, 1).fill(finish(ring));
+    }
+    stick.moveTo(-88, -.55 * radiusAt(-88)).lineTo(-20, -.48 * radiusAt(-20))
+      .stroke({ color: inlay, width: 1, alpha: .7 });
+    stick.roundRect(-5, -tipRadius, 5, tipRadius * 2, 1.3).fill(finish(inlay));
   }
-  stick.stroke({ color: pattern === 'grain' ? 0x60341b : 0x8396b5, width: .9, alpha: .55 });
-  const metal = gradient([[0, 0x536585], [.33, 0xf2f6f5], [.63, ring ?? 0x85a7bc], [1, 0x263656]]);
-  for (const [x, radius, width] of [[-348, 7, 11], [-255, 5.8, 6], [-242, 5.5, 3], [-99, 3.7, 6], [-17, 2.65, 12]]) {
-    stick.roundRect(x, -radius, width, radius * 2, 1.2).fill(metal);
+  const ornament = new Graphics();
+  drawCueInlay(ornament, pattern, inlay);
+  ornament.scale.y = radiusAt(-120) / 4;
+  const back = new Graphics(), front = new Graphics(), burst = new Graphics();
+  cue.addChild(shadow, back, stick, ornament, front, burst);
+  let head = null;
+  if (headTexture) {
+    const group = new Container();
+    const matte = new Sprite(headTexture), highlight = new Sprite(headTexture);
+    matte.anchor.set(.53, .57);
+    highlight.anchor.copyFrom(matte.anchor);
+    highlight.blendMode = 'add';
+    group.addChild(matte, highlight);
+    cue.addChildAt(group, cue.getChildIndex(front));
+    head = { group, highlight, width: headTexture.width };
   }
-  stick.rect(-246, -5.4, 3, 10.8).fill(ring ?? 0x86bcff);
-  stick.moveTo(-93, -1.9).lineTo(-18, -1).stroke({ color: 0xd5f7ff, width: .95, alpha: .86 });
-  stick.roundRect(-5, -2.5, 5, 5, 1.4).fill(pattern ? inlay : 0x4ebedc);
-  stick.moveTo(-3.5, -1.35).lineTo(-.8, -1.35).stroke({ color: 0xabf4ff, width: .8 });
-  cue.addChild(shadow, stick);
+  cue.updateEffects = createCueEffects(styleId, radiusAt, back, front, burst, head);
   return cue;
 }
 
 function drawCueInlay(stick, pattern, color) {
   switch (pattern) {
-    case 'grain':
-      for (const y of [-2.3, -.5, 1.4, 2.7]) {
-        stick.moveTo(-234, y).quadraticCurveTo(-163, y - 1.9, -111, y * .65);
+    case 'sand':
+      for (const x of [-227, -205, -183, -161, -139]) {
+        stick.moveTo(x, -2.2).lineTo(x + 10, -2.2).lineTo(x + 15, 0);
+        stick.moveTo(x, 2.2).lineTo(x + 10, 2.2).lineTo(x + 15, 0);
       }
-      stick.stroke({ color, width: .65, alpha: .85 });
+      stick.stroke({ color, width: .8, alpha: .9 });
       break;
-    case 'points':
-      stick.poly([-233, -3.45, -233, -.45, -113, -1.6]).fill(0xf9ebe8);
-      stick.poly([-233, .45, -233, 3.45, -143, 1.6]).fill(color);
+    case 'lava':
+      // The fissures are animated in the effect layer.
       break;
     case 'diamonds':
       for (const x of [-217, -187, -157, -127]) stick.poly([x - 10, 0, x, -3, x + 10, 0, x, 3]).fill(color);
@@ -201,12 +231,12 @@ function dashedLine(g, x1, y1, x2, y2, color, alpha = .8) {
 }
 const guideCache = new WeakMap();
 export function clearAim(g) { g.clear(); guideCache.delete(g); }
-export function drawAim(g, cue, balls, angle, tip, group, onEight) {
+export function drawAim(g, cue, balls, angle, tip, group, onEight, styleId) {
   // Neither power nor animation time is part of the key: pulling the bar cannot move this guide.
-  const key = `${angle}:${tip.x}:${tip.y}:${group}:${onEight}:` + balls.map(b => `${b.number},${b.x},${b.y},${b.potted}`).join(';');
+  const key = `${styleId}:${angle}:${tip.x}:${tip.y}:${group}:${onEight}:` + balls.map(b => `${b.number},${b.x},${b.y},${b.potted}`).join(';');
   const cached = guideCache.get(g);
   if (cached?.key === key) return cached.blocked;
-  const { trace, blocked, objectDirection: d } = predictDirections(cue, balls, angle, tip, group, onEight);
+  const { trace, blocked, objectDirection: d } = predictDirections(cue, balls, angle, tip, group, onEight, cueStyle(styleId).shot);
   guideCache.set(g, { key, blocked });
   g.clear();
   if (blocked) {

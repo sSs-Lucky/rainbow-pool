@@ -1,5 +1,5 @@
-import { Application, Container, Graphics, RendererType } from 'pixi.js';
-import { CANVAS_W, CANVAS_H, BALL_R, POCKET_R, MAX_SHOT_SPEED } from './config.js';
+import { Application, Assets, Container, Graphics, RendererType } from 'pixi.js';
+import { CANVAS_W, CANVAS_H, BALL_R, POCKET_R, POWER_CURVE } from './config.js';
 import { powerFromPull, fineAngle, tipFromPoint, traceAim } from './aiming.js';
 import { cuePose, cueTravel, cueAimGap, startCueStroke, cueStrokeFrame } from './cue-motion.js';
 import { rack, step, allStopped, shoot, placeCueExact, clampTip } from './physics.js';
@@ -16,6 +16,8 @@ import { DEFAULT_CUE, cueStyle, colorHex, isCueStyle } from './cue-styles.js';
 import { setupProfile } from './profile.js';
 import { setupCallControls } from './call-controls.js';
 import { setupChatControls } from './chat-controls.js';
+import fireDragonHead from './assets/fire-dragon-head.png?url';
+import waterSerpentHead from './assets/water-serpent-head.png?url';
 
 const game = {
   mode: 'solo', myPlayer: 1, turn: 1, started: false,
@@ -29,6 +31,8 @@ const game = {
 
 let app, ballVisuals, aimLine, placementLine, callMarks, cueVisual, roomCall, roomChat;
 const cueModels = new Map();
+const cueHeadTextures = new Map();
+const reducedCueMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let account = null, visibleCueId;
 const CUE_MARGIN = 74;
 let cueBounds, cueStroke = null;
@@ -112,12 +116,15 @@ async function main() {
     seat: game.myPlayer, players: game.players,
   }), roomCall.hidePanel);
   ui.el('media-toggle').addEventListener('click', roomChat.hidePanel);
+  await Promise.allSettled(Object.entries({ ember: fireDragonHead, ocean: waterSerpentHead })
+    .map(async ([id, url]) => cueHeadTextures.set(id, await Assets.load(url))));
   setupProfile(profile => {
     account = profile;
     const shaft = profile?.cue && profile.cue !== DEFAULT_CUE ? colorHex(cueStyle(profile.cue).shaft) : '#3eb9d7';
     ui.el('power-stick').style.setProperty('--power-cue', shaft);
   }, id => {
-    const target = buildCueVisual(id);
+    const target = buildCueVisual(id, cueHeadTextures.get(id));
+    target.updateEffects(0, .55);
     const canvas = app.renderer.extract.canvas({ target, resolution: 2, antialias: true });
     target.destroy({ children: true });
     return canvas;
@@ -210,11 +217,14 @@ function resetControls() {
 
 function showCueStyle(id) {
   const style = isCueStyle(id) ? id : DEFAULT_CUE;
-  if (style === visibleCueId) return;
-  if (!cueModels.has(style)) cueModels.set(style, buildCueVisual(style));
-  cueVisual.removeChildren();
-  cueVisual.addChild(cueModels.get(style));
-  visibleCueId = style;
+  if (!cueModels.has(style)) cueModels.set(style, buildCueVisual(style, cueHeadTextures.get(style)));
+  const model = cueModels.get(style);
+  if (style !== visibleCueId) {
+    cueVisual.removeChildren();
+    cueVisual.addChild(model);
+    visibleCueId = style;
+  }
+  return model;
 }
 
 function playerCue(player) {
@@ -234,11 +244,12 @@ function renderControls() {
   const angle = cueStroke?.angle ?? (opponentReady ? opponentAim.angle : aim.angle);
   const power = opponentReady ? opponentAim.power : aim.power;
   const tip = cueStroke?.tip ?? (opponentReady ? opponentAim.tip : aim.tip);
-  renderPrecision(tip, usable && aim.pointer == null, angle);
+  const style = cueStroke?.style ?? playerCue(opponentReady ? game.turn : game.myPlayer);
+  renderPrecision(tip, usable && aim.pointer == null, angle, cueStyle(style).shot.maxTipOffset);
   cueVisual.visible = inGame && (usable || opponentReady || !!strokeFrame);
   aimLine.visible = inGame && (usable || opponentReady);
   const group = game.mode === 'solo' || game.breaking ? null : game.groups[game.turn];
-  const blocked = aimLine.visible && drawAim(aimLine, game.cue, game.balls, angle, tip, group, onEight);
+  const blocked = aimLine.visible && drawAim(aimLine, game.cue, game.balls, angle, tip, group, onEight, style);
   const canPower = usable && !blocked && !needsCall;
   if (!canPower && aim.pointer != null) { aim.pointer = null; aim.power = 0; }
   if (aimLine.visible) {
@@ -254,13 +265,14 @@ function renderControls() {
     lastAimSent = now;
   }
   if (cueVisual.visible) {
-    showCueStyle(cueStroke?.style ?? playerCue(opponentReady ? game.turn : game.myPlayer));
+    const model = showCueStyle(style);
     const pos = cueStroke?.position ?? game.cue;
     const gap = strokeFrame?.gap ?? cueAimGap(power, cueTravel(pos, angle, cueBounds));
     const { x, y } = cuePose(pos, angle, tip, gap);
     cueVisual.position.set(x, y);
     cueVisual.rotation = angle;
     cueVisual.alpha = strokeFrame?.alpha ?? 1;
+    model.updateEffects(now, cueStroke?.pullPower ?? power, cueStroke, gap, reducedCueMotion.matches);
   }
   const stopped = game.mode === 'solo' ? allStopped(game.balls) : game.settled;
   const label = game.gameOver ? '本局结束' : game.ballInHand && (game.mode === 'solo' || game.turn === game.myPlayer)
@@ -290,9 +302,11 @@ function strike() {
   if (onEight && shotCall.pocket == null) { aim.power = 0; return; }
   const call = onEight ? { ball: 8, pocket: shotCall.pocket } : shotCall.safety ? { safety: true } : null;
   const position = { x: game.cue.x, y: game.cue.y }, angle = aim.angle;
+  const style = playerCue(game.myPlayer);
   cueStroke = {
     ...startCueStroke(performance.now(), aim.power, cueTravel(position, angle, cueBounds)),
-    position, angle, power: Math.pow(aim.power, 1.35), tip: aim.tip, call, hit: false, style: playerCue(game.myPlayer),
+    position, angle, power: aim.power ** POWER_CURVE, tip: clampTip(aim.tip, cueStyle(style).shot.maxTipOffset),
+    call, hit: false, style,
   };
   aim.power = 0; aim.pointer = null;
   aim.tip = { x: 0, y: 0 }; ui.el('spin-modal').classList.remove('show');
@@ -303,11 +317,11 @@ function hitCue(now) {
   if (!cueStroke || cueStroke.hit || now < cueStroke.impactAt) return;
   if (!tableReadyForShot()) { cueStroke = null; return; }
   cueStroke.hit = true;
-  const { angle, power, tip, call } = cueStroke;
+  const { angle, power, tip, call, style } = cueStroke;
   const dx = Math.cos(angle), dy = Math.sin(angle);
   if (game.mode !== 'solo') {
     game.net.send({ type: 'shoot', dx, dy, power, tip, call }); game.settled = false; audio.cueStrike();
-  } else doShoot(dx, dy, power, tip);
+  } else doShoot(dx, dy, power, tip, cueStyle(style).shot);
 }
 
 function targetPrompt(onEight) {
@@ -408,9 +422,9 @@ function spinLabel(tip) {
   const side = tip.x > .035 ? '右塞' : tip.x < -.035 ? '左塞' : '';
   return [vertical, side].filter(Boolean).join(' · ') || '中杆';
 }
-function renderPrecision(tip, enabled, displayAngle) {
+function renderPrecision(tip, enabled, displayAngle, tipLimit) {
   const degrees = Math.atan2(Math.sin(displayAngle), Math.cos(displayAngle)) * 180 / Math.PI;
-  const key = `${enabled}:${degrees.toFixed(4)}:${aim.fineDelta.toFixed(3)}:${tip.x.toFixed(3)}:${tip.y.toFixed(3)}`;
+  const key = `${enabled}:${degrees.toFixed(4)}:${aim.fineDelta.toFixed(3)}:${tip.x.toFixed(3)}:${tip.y.toFixed(3)}:${tipLimit}`;
   if (key === precisionState) return;
   precisionState = key;
   for (const id of ['fine-track', 'fine-minus', 'fine-plus', 'spin-open', 'spin-pad']) ui.el(id).disabled = !enabled;
@@ -421,6 +435,7 @@ function renderPrecision(tip, enabled, displayAngle) {
   for (const id of ['spin-dot', 'spin-pad-dot']) {
     ui.el(id).style.left = `${50 + tip.x * 50}%`; ui.el(id).style.top = `${50 - tip.y * 50}%`;
   }
+  ui.el('spin-pad').style.setProperty('--tip-inset', `${(1 - tipLimit) * 50}%`);
   const label = spinLabel(tip);
   ui.el('spin-caption').textContent = label;
   ui.el('spin-open').setAttribute('aria-label', `白球击点：${label}，点击设置`);
@@ -428,6 +443,7 @@ function renderPrecision(tip, enabled, displayAngle) {
 }
 function setupPrecisionControls() {
   const track = ui.el('fine-track'), modal = ui.el('spin-modal'), pad = ui.el('spin-pad');
+  const tipLimit = () => cueStyle(playerCue(game.myPlayer)).shot.maxTipOffset;
   const cancelFine = () => { aim.finePointer = null; aim.fineDelta = 0; };
   track.addEventListener('pointerdown', e => {
     if (!canShoot() || aim.pointer != null || e.isPrimary === false) return;
@@ -459,7 +475,8 @@ function setupPrecisionControls() {
   let pointer = null;
   const setPoint = e => {
     if (!canShoot()) return;
-    const r = pad.getBoundingClientRect(); aim.tip = tipFromPoint(e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2, r.width / 2);
+    const r = pad.getBoundingClientRect();
+    aim.tip = tipFromPoint(e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2, r.width / 2, tipLimit());
   };
   pad.addEventListener('pointerdown', e => {
     if (!canShoot() || e.isPrimary === false) return;
@@ -473,7 +490,10 @@ function setupPrecisionControls() {
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home'].includes(e.key)) {
       e.preventDefault();
       if (e.key === 'Home') aim.tip = { x: 0, y: 0 };
-      else aim.tip = clampTip({ x: aim.tip.x + (e.key === 'ArrowLeft' ? -.025 : e.key === 'ArrowRight' ? .025 : 0), y: aim.tip.y + (e.key === 'ArrowUp' ? .025 : e.key === 'ArrowDown' ? -.025 : 0) });
+      else aim.tip = clampTip({
+        x: aim.tip.x + (e.key === 'ArrowLeft' ? -.025 : e.key === 'ArrowRight' ? .025 : 0),
+        y: aim.tip.y + (e.key === 'ArrowUp' ? .025 : e.key === 'ArrowDown' ? -.025 : 0),
+      }, tipLimit());
     }
   });
   window.addEventListener('blur', () => { cancelFine(); pointer = null; });
@@ -587,8 +607,8 @@ function confirmCuePlacement() {
   }
 }
 
-function doShoot(dx, dy, power, tip) {
-  shoot(game.cue, dx, dy, power, tip);
+function doShoot(dx, dy, power, tip, shot) {
+  shoot(game.cue, dx, dy, power, tip, shot);
   audio.cueStrike();
   game.shots++;
   game.shooting = true;
@@ -647,10 +667,11 @@ function applyState(m) {
     if (speed > 0) {
       const now = performance.now(), angle = Math.atan2(-white.vy, white.vx);
       const position = { x: game.cue.tx, y: game.cue.ty };
-      const power = opponentAim.power || Math.min(1, speed / MAX_SHOT_SPEED);
+      const style = playerCue(m.turn);
+      const power = opponentAim.power || Math.min(1, speed / cueStyle(style).shot.maxSpeed);
       cueStroke = {
         ...startCueStroke(now, power, cueTravel(position, angle, cueBounds)),
-        impactAt: now, position, angle, tip: opponentAim.tip, hit: true, style: playerCue(m.turn),
+        impactAt: now, position, angle, tip: opponentAim.tip, hit: true, style,
       };
     }
   }
@@ -811,7 +832,10 @@ function onMessage(m) {
     cueStroke = null; game.settled = true;
     ui.toast(m.reason === 'wrongTarget' ? targetPrompt(finishingShot()) : '请先指定黑 8 的袋口');
   }
-  else if (m.type === 'aim' && m.player !== game.myPlayer) { opponentAim.angle = m.angle; opponentAim.power = m.power; opponentAim.tip = clampTip(m.tip); }
+  else if (m.type === 'aim' && m.player !== game.myPlayer) {
+    opponentAim.angle = m.angle; opponentAim.power = m.power;
+    opponentAim.tip = clampTip(m.tip, cueStyle(playerCue(m.player)).shot.maxTipOffset);
+  }
 }
 
 function inviteUrl() {
