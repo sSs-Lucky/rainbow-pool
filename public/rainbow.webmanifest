@@ -1,0 +1,17 @@
+{
+  "id": "/",
+  "name": "RainBow 台球",
+  "short_name": "RainBow 台球",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["fullscreen"],
+  "orientation": "landscape",
+  "background_color": "#071511",
+  "theme_color": "#091e19",
+  "icons": [
+    { "src": "/icons/rainbow-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/rainbow-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

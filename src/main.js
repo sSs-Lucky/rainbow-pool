@@ -868,11 +868,48 @@ async function copyInvite() {
   catch { ui.toast('请长按房间下方的链接复制'); }
 }
 async function fullscreen() {
+  if (!document.fullscreenEnabled) { ui.el('install-guide').showModal(); return; }
   try {
     if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
     await screen.orientation?.lock?.('landscape').catch(() => {});
   } catch { ui.toast('请旋转手机横屏游玩'); }
 }
+
+function setupInstall() {
+  const button = ui.el('btn-install'), guide = ui.el('install-guide');
+  const nativeInstall = ui.el('install-native');
+  const display = matchMedia('(display-mode: standalone), (display-mode: fullscreen)');
+  let deferredPrompt, installed = false;
+  const update = () => {
+    const appMode = navigator.standalone === true || display.matches;
+    document.body.classList.toggle('installed-app', appMode);
+    button.hidden = appMode || installed;
+    nativeInstall.hidden = !deferredPrompt;
+  };
+  display.addEventListener('change', update);
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    deferredPrompt = event;
+    update();
+  });
+  window.addEventListener('appinstalled', () => {
+    installed = true;
+    deferredPrompt = null;
+    update();
+  });
+  button.onclick = () => guide.showModal();
+  nativeInstall.onclick = async () => {
+    const prompt = deferredPrompt;
+    deferredPrompt = null;
+    update();
+    try {
+      const result = await prompt?.prompt();
+      if (result?.outcome === 'accepted') guide.close();
+    } catch { /* The browser instructions are still available. */ }
+  };
+  update();
+}
+
 function wireMenu() {
   const click = (id, fn) => { ui.el(id).onclick = () => { audio.resume(); audio.uiClick(); fn(); }; };
   click('btn-settings', () => ui.el('rules-modal').classList.add('show'));
@@ -905,6 +942,7 @@ function wireMenu() {
   ui.el('btn-menu').onclick = async () => { if (await ui.confirm(t('confirmExit'))) leaveGame(); };
 }
 
+setupInstall();
 main().catch(error => {
   console.error(error);
   ui.toast('画面加载失败，请刷新页面或使用手机自带浏览器打开');
