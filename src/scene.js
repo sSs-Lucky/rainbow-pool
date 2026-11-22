@@ -39,9 +39,13 @@ export function drawTable() {
   }
 
   for (const p of pocketPositions()) {
-    g.circle(p.x, p.y, POCKET_R + 6).fill({ color: 0x000000, alpha: 0.4 });
-    g.circle(p.x, p.y, POCKET_R + 3).fill(0x4a3a1f);
-    g.circle(p.x, p.y, POCKET_R + 3).stroke({ width: 2, color: 0xd9b15a, alpha: 0.7 });
+    if (p.dx === 0) {
+      drawMiddlePocketMount(g, p);
+    } else {
+      g.circle(p.x, p.y, POCKET_R + 6).fill({ color: 0x000000, alpha: 0.4 });
+      g.circle(p.x, p.y, POCKET_R + 3).fill(0x4a3a1f);
+      g.circle(p.x, p.y, POCKET_R + 3).stroke({ width: 2, color: 0xd9b15a, alpha: 0.7 });
+    }
     const hole = new FillGradient({
       type: 'radial', innerCenter: { x: 0.5, y: 0.4 }, innerRadius: 0, outerCenter: { x: 0.5, y: 0.5 }, outerRadius: 0.5,
       colorStops: [{ offset: 0, color: 0x101010 }, { offset: 1, color: 0x000000 }], textureSpace: 'local',
@@ -51,13 +55,37 @@ export function drawTable() {
 
 
   // Nose edges and sloping jaws exactly match geometry.js, including the openings.
-  for (const polygon of CUSHION_POLYGONS) {
+  for (const [index, polygon] of CUSHION_POLYGONS.entries()) {
     g.poly(polygon.flat()).fill(0x125e40).stroke({ width: 1.3, color: 0x239a61, alpha: .85 });
     const inner = polygon.slice(1, 4);
     g.moveTo(inner[0][0], inner[0][1]).lineTo(inner[1][0], inner[1][1]).lineTo(inner[2][0], inner[2][1])
       .stroke({ width: 3.2, color: 0x003b29, alpha: .65 });
+    if (index < 4) {
+      // Highlight just the jaw at the center of each long cushion.
+      const [[backX, backY], [noseX, noseY]] = inner;
+      const intoCushion = Math.sign(noseX - backX);
+      g.poly([backX, backY, noseX, noseY, noseX + 6 * intoCushion, noseY, backX + 3 * intoCushion, backY])
+        .fill(0x207750);
+      g.moveTo(backX, backY).lineTo(noseX, noseY).stroke({ width: 1, color: 0x6bb78a, alpha: .62 });
+    }
   }
   return g;
+}
+
+function drawMiddlePocketMount(g, pocket) {
+  const { x, y, dy } = pocket;
+  const rimHalfWidth = POCKET_R + 3;
+  const railEdge = dy < 0 ? 2 : CANVAS_H - 2;
+  const innerEdge = y - dy * 6;
+  const cap = new FillGradient({
+    type: 'linear', start: { x: 0, y: dy < 0 ? 0 : 1 }, end: { x: 0, y: dy < 0 ? 1 : 0 },
+    colorStops: [{ offset: 0, color: 0xa28766 }, { offset: .24, color: 0x79644e }, { offset: 1, color: 0x2e2722 }],
+    textureSpace: 'local',
+  });
+  // The cushions mask the sides of the fitting so the opening follows the shared jaw geometry.
+  g.roundRect(x - rimHalfWidth, Math.min(railEdge, innerEdge), rimHalfWidth * 2, Math.abs(railEdge - innerEdge), 4)
+    .fill(cap).stroke({ width: 1, color: 0xcdb99b, alpha: .32 });
+  g.circle(x, y, POCKET_R + 2).fill(0x191713).stroke({ width: 1, color: 0x887459, alpha: .44 });
 }
 
 // Static textures for renderers that do not support the WebGL sphere material.
