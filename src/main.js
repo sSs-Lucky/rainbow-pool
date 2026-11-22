@@ -1,13 +1,13 @@
 import { Application, Container, Graphics, RendererType } from 'pixi.js';
 import { CANVAS_W, CANVAS_H, BALL_R, POCKET_R, MAX_SHOT_SPEED } from './config.js';
-import { powerFromPull, fineAngle, tipFromPoint } from './aiming.js';
+import { powerFromPull, fineAngle, tipFromPoint, traceAim } from './aiming.js';
 import { cuePose, cueTravel, cueAimGap, startCueStroke, cueStrokeFrame } from './cue-motion.js';
 import { rack, step, allStopped, shoot, placeCueExact, clampTip } from './physics.js';
 import { drawTable, drawAim, clearAim, drawPlacement, drawCall, buildCueVisual, createFlatBalls } from './scene.js';
 import { createSphereBalls } from './ball-visual.js';
 import { SnapshotPlayback } from './playback.js';
 import { POCKETS, validPlacement } from './geometry.js';
-import { BREAK_CHOICES, groupOf, isOnEight } from './shot-rules.js';
+import { BREAK_CHOICES, groupOf, isOnEight, isBlockedTarget } from './shot-rules.js';
 import { host, join } from './net.js';
 import * as ui from './ui.js';
 import * as audio from './audio.js';
@@ -227,10 +227,8 @@ function renderControls() {
   const strokeFrame = cueStroke && cueStrokeFrame(cueStroke, now);
   if (cueStroke?.hit && !strokeFrame) cueStroke = null;
   const usable = inGame && canShoot();
-  const onEight = finishingShot();
+  const onEight = finishingShot(game.turn);
   const needsCall = onEight && shotCall.pocket == null;
-  const canPower = usable && !needsCall;
-  if (!canPower && aim.pointer != null) { aim.pointer = null; aim.power = 0; }
   const opponentReady = !cueStroke && game.mode !== 'solo' && game.started && game.connected && game.settled
     && !game.gameOver && !game.ballInHand && !game.breakDecision && !game.cuePotted && game.turn !== game.myPlayer;
   const angle = cueStroke?.angle ?? (opponentReady ? opponentAim.angle : aim.angle);
@@ -239,9 +237,12 @@ function renderControls() {
   renderPrecision(tip, usable && aim.pointer == null, angle);
   cueVisual.visible = inGame && (usable || opponentReady || !!strokeFrame);
   aimLine.visible = inGame && (usable || opponentReady);
+  const group = game.mode === 'solo' || game.breaking ? null : game.groups[game.turn];
+  const blocked = aimLine.visible && drawAim(aimLine, game.cue, game.balls, angle, tip, group, onEight);
+  const canPower = usable && !blocked && !needsCall;
+  if (!canPower && aim.pointer != null) { aim.pointer = null; aim.power = 0; }
   if (aimLine.visible) {
-    drawAim(aimLine, game.cue, game.balls, angle, power, tip);
-    const text = '白线瞄准 · 金色短箭头：目标球初始方向参考';
+    const text = blocked && usable ? targetPrompt(onEight) : '白线瞄准 · 金色短箭头：目标球初始方向参考';
     if (text !== guideState) { ui.el('hint').textContent = text; guideState = text; }
     ui.showHint();
   } else if (!game.ballInHand) ui.hideHint();
@@ -265,7 +266,7 @@ function renderControls() {
   const label = game.gameOver ? '本局结束' : game.ballInHand && (game.mode === 'solo' || game.turn === game.myPlayer)
     ? '先摆白球' : game.mode !== 'solo' && !game.connected ? '等待连接' : !stopped ? '球在运动'
     : game.breakDecision ? '等待选择' : cueStroke ? (cueStroke.hit ? '收杆中' : '出杆中')
-    : !usable ? '对手回合' : needsCall ? '先选黑 8 袋口' : '下拉蓄力';
+    : !usable ? '对手回合' : blocked ? targetPrompt(onEight) : needsCall ? '先选黑 8 袋口' : '下拉蓄力';
   const percent = Math.round(aim.power * 100), next = `${canPower}-${percent}-${label}`;
   if (next !== controlState) {
     const track = ui.el('power-track'); track.disabled = !canPower;
@@ -281,6 +282,11 @@ function renderControls() {
 function strike() {
   if (!canShoot() || aim.power < .025) { aim.power = 0; return; }
   const onEight = finishingShot();
+  const group = game.mode === 'solo' || game.breaking ? null : game.groups[game.myPlayer];
+  if (group && isBlockedTarget(traceAim(game.cue, game.balls, aim.angle).target?.number, group, onEight)) {
+    aim.power = 0;
+    return;
+  }
   if (onEight && shotCall.pocket == null) { aim.power = 0; return; }
   const call = onEight ? { ball: 8, pocket: shotCall.pocket } : shotCall.safety ? { safety: true } : null;
   const position = { x: game.cue.x, y: game.cue.y }, angle = aim.angle;
@@ -301,12 +307,15 @@ function hitCue(now) {
   const dx = Math.cos(angle), dy = Math.sin(angle);
   if (game.mode !== 'solo') {
     game.net.send({ type: 'shoot', dx, dy, power, tip, call }); game.settled = false; audio.cueStrike();
-    resetShotCall();
   } else doShoot(dx, dy, power, tip);
 }
 
-function finishingShot() {
-  return game.mode !== 'solo' && !game.breaking && isOnEight(game.balls, game.groups[game.myPlayer]);
+function targetPrompt(onEight) {
+  return onEight ? '请先瞄准黑 8' : '请先瞄准本组球';
+}
+
+function finishingShot(player = game.myPlayer) {
+  return game.mode !== 'solo' && !game.breaking && isOnEight(game.balls, game.groups[player]);
 }
 
 function resetShotCall() {
@@ -656,6 +665,7 @@ function applyState(m) {
   game.turn = m.turn;
   game.settled = m.settled;
   game.cuePotted = m.cuePotted;
+  if (m.shots > game.shots) resetShotCall();
   game.shots = m.shots;
   game.groups = m.groups;
   game.gameOver = m.gameOver;
@@ -797,7 +807,10 @@ function onMessage(m) {
   else if (m.type === 'rtc' && game.mode !== 'solo') roomCall.receive(m);
   else if (['chatHistory', 'chatMessage', 'chatRejected'].includes(m.type) && game.mode !== 'solo') roomChat.receive(m);
   else if (m.type === 'placeRejected') { placement.pending = false; placement.valid = false; ui.toast('请选择可摆放白球的位置'); }
-  else if (m.type === 'shotRejected') { cueStroke = null; game.settled = true; ui.toast('请先指定黑 8 的袋口'); }
+  else if (m.type === 'shotRejected') {
+    cueStroke = null; game.settled = true;
+    ui.toast(m.reason === 'wrongTarget' ? targetPrompt(finishingShot()) : '请先指定黑 8 的袋口');
+  }
   else if (m.type === 'aim' && m.player !== game.myPlayer) { opponentAim.angle = m.angle; opponentAim.power = m.power; opponentAim.tip = clampTip(m.tip); }
 }
 

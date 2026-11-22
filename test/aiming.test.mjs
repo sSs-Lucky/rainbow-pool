@@ -58,6 +58,39 @@ test('the stable guide has no spurious target when aiming at an open cushion', (
   assert.equal(predictDirections(balls[0],balls,0).objectDirection,null);
 });
 
+test('after group assignment the guide blocks a wrong first ball even when it screens a legal target', () => {
+  const white = stationary(280, 280, 0);
+  const tip = { x: 0, y: 0 };
+  for (const [group, own, rival] of [['solids', 1, 9], ['stripes', 9, 1]]) {
+    const balls = [white, stationary(550, 280, own), stationary(450, 280, rival)];
+    const blocked = predictDirections(white, balls, 0, tip, group);
+    assert.equal(blocked.trace.target.number, rival);
+    assert.equal(blocked.blocked, true);
+    assert.equal(blocked.objectDirection, null);
+    assert.equal(predictDirections(white, balls, 0).blocked, false, 'open-table aim stays available');
+    assert.equal(predictDirections(white, balls, Math.PI / 2, tip, group).blocked, false, 'bank shots are available');
+
+    balls[2].potted = true;
+    const legal = predictDirections(white, balls, 0, tip, group);
+    assert.equal(legal.trace.target.number, own);
+    assert.equal(legal.blocked, false);
+    assert.ok(legal.objectDirection.x > .999);
+  }
+});
+
+test('black eight is an aiming target only after clearing the group, including at immediate contact', () => {
+  const white = stationary(280, 280, 0);
+  const eight = stationary(280 + 2 * BALL_R, 280, 8);
+  const tip = { x: 0, y: 0 };
+  const early = predictDirections(white, [white, eight], 0, tip, 'solids');
+  assert.equal(early.trace.distance, 0);
+  assert.equal(early.blocked, true);
+  assert.equal(predictDirections(white, [white, eight], Math.PI, tip, 'solids').blocked, false);
+  assert.equal(predictDirections(white, [white, eight], 0, tip, 'solids', true).blocked, false);
+  const rival = stationary(450, 280, 9);
+  assert.equal(predictDirections(white, [white, rival], 0, tip, 'solids', true).blocked, true);
+});
+
 test('cue release starts from the charged position, touches the ball and retracts visibly', () => {
   const stroke = startCueStroke(1000, .8, 85);
   assert.deepEqual(cueStrokeFrame(stroke, 1000), { gap: cueAimGap(.8, 85), alpha: 1 });

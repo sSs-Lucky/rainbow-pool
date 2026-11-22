@@ -8,7 +8,8 @@ import { createAccounts, sameOrigin } from './accounts.mjs';
 import { roomMedia } from './room-media.mjs';
 import { CHAT_HISTORY_LIMIT, chatText } from './src/room-chat.js';
 import { rack, step, allStopped, shoot, placeCueExact, clampTip, evolveCloth } from './src/physics.js';
-import { adjudicateShot, BREAK_CHOICES, isOnEight, otherPlayer, validateEightCall } from './src/shot-rules.js';
+import { traceAim } from './src/aiming.js';
+import { adjudicateShot, BREAK_CHOICES, isOnEight, isBlockedTarget, otherPlayer, validateEightCall } from './src/shot-rules.js';
 import { POCKETS, pocketAt } from './src/geometry.js';
 import { BALL_R, CUSHION, FOOT_SPOT, HEAD_STRING, PHYSICS_VERSION, TABLE_H, TABLE_W } from './src/config.js';
 const base = path.dirname(fileURLToPath(import.meta.url));
@@ -232,7 +233,11 @@ wss.on('connection', (ws, req) => {
       if (m.confirm !== false) { room.ballInHand = false; room.reason = ''; }
       room.updated = Date.now(); pushState(room); dirty = true;
     } else if (m.type === 'shoot' && !room.ballInHand && !cue.potted && [m.dx, m.dy, m.power].every(Number.isFinite) && Math.hypot(m.dx, m.dy) > 0 && Number.isFinite(Math.hypot(m.dx, m.dy)) && m.power > 0) {
-      const onEight = !room.breaking && isOnEight(room.balls, room.groups[room.turn]);
+      const group = room.breaking ? null : room.groups[room.turn];
+      const onEight = !room.breaking && isOnEight(room.balls, group);
+      if (group && isBlockedTarget(traceAim(cue, room.balls, Math.atan2(m.dy, m.dx)).target?.number, group, onEight)) {
+        send(ws, { type: 'shotRejected', reason: 'wrongTarget' }); return;
+      }
       const call = onEight ? validateEightCall(m.call) :
         !room.breaking && m.call?.safety === true ? { safety: true } : null;
       if (onEight && !call) { send(ws, { type: 'shotRejected' }); return; }

@@ -15,6 +15,16 @@ export function isOnEight(balls, group) {
   return !balls.some(b => !b.potted && b.number !== 0 && b.number !== 8 && (!group || groupOf(b.number) === group));
 }
 
+function legalFirstBall(number, group, onEight) {
+  if (onEight) return number === 8;
+  const targetGroup = groupOf(number);
+  return group ? targetGroup === group : targetGroup === 'solids' || targetGroup === 'stripes';
+}
+
+export function isBlockedTarget(number, group, onEight) {
+  return number != null && group != null && !legalFirstBall(number, group, onEight);
+}
+
 export function validateEightCall(call) {
   if (call?.ball !== 8 || !Number.isInteger(call.pocket) || !POCKETS[call.pocket]) return null;
   return { ball: 8, pocket: call.pocket };
@@ -44,7 +54,7 @@ export function adjudicateShot(room) {
 
   const scratch = room.potted.includes(0);
   const first = room.firstHit;
-  const wrongFirst = first != null && (room.onEight ? first !== 8 : first === 8 || (mine && groupOf(first) !== mine));
+  const wrongFirst = first != null && !legalFirstBall(first, mine, room.onEight);
   const foul = scratch ? 'scratch' : first == null ? 'noHit' : room.headFault ? 'headFoul' :
     wrongFirst ? 'wrongFirst' : !room.potted.length && !room.railAfterHit ? 'noRail' : '';
   const called = room.called;

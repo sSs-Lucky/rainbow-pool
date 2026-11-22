@@ -4,6 +4,8 @@ import { randomBytes } from 'node:crypto';
 import { WebSocket } from 'ws';
 import { BALL_R, HEAD_STRING } from '../src/config.js';
 import { POCKETS } from '../src/geometry.js';
+import { traceAim } from '../src/aiming.js';
+import { groupOf } from '../src/shot-rules.js';
 import { CHAT_MAX_LENGTH, QUICK_PHRASES } from '../src/room-chat.js';
 const base = process.env.POOL_TEST_URL || 'http://127.0.0.1:3000';
 const endpoint = base.replace(/^http/, 'ws') + '/ws';
@@ -230,6 +232,30 @@ test('both seats sync 3D rotation; break pots stay open until a normal pot assig
   assert.equal(assigned.groups[breaker], apex.n < 8 ? 'solids' : 'stripes');
   assert.equal(assigned.turn, breaker);
   assert.deepEqual((await settled(passive, 2)).groups, assigned.groups);
+
+  const table = assigned.balls.map(ball => ({ ...ball, number: ball.n, potted: ball.p }));
+  const white = table[0], group = assigned.groups[breaker];
+  const visibleTargets = table.filter(ball => !ball.potted && ball.number !== 0).map(ball => {
+    const dx = ball.x - white.x, dy = ball.y - white.y;
+    const target = traceAim(white, table, Math.atan2(dy, dx)).target;
+    return { dx, dy, target };
+  }).filter(({ target }) => target);
+  const wrong = visibleTargets.find(({ target }) => groupOf(target.number) === assigned.groups[opponent(breaker)]);
+  assert.ok(wrong, 'an opposing ball is in the direct line of aim');
+  const beforeRejection = active.messages.length;
+  shoot(active, wrong.dx, wrong.dy, .8);
+  const rejected = await active.wait(m => m.type === 'shotRejected', 2500, beforeRejection);
+  assert.equal(rejected.reason, 'wrongTarget');
+  assert.equal(active.state().shots, 2);
+  assert.equal(active.state().turn, breaker);
+  assert.equal(active.state().settled, true);
+  assert.equal(passive.state().shots, 2);
+
+  const own = visibleTargets.find(({ target }) => groupOf(target.number) === group);
+  assert.ok(own, 'a ball of the current group is in the direct line of aim');
+  shoot(active, own.dx, own.dy, .25);
+  await state(passive, m => m.shots === 3 && !m.settled);
+  await settled(active, 3);
   const again = await reconnect(opponent(breaker));
   assert.deepEqual((await state(again, m => m.connected.length === 2)).groups, assigned.groups);
 

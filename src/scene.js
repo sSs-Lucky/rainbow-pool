@@ -162,7 +162,9 @@ function drawCueInlay(stick, pattern, color) {
   }
 }
 function dashedLine(g, x1, y1, x2, y2, color, alpha = .8) {
-  const len = Math.hypot(x2 - x1, y2 - y1), dx = (x2 - x1) / len, dy = (y2 - y1) / len;
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  if (len === 0) return;
+  const dx = (x2 - x1) / len, dy = (y2 - y1) / len;
   for (let t = 0; t < len; t += 15) {
     const end = Math.min(t + 8, len);
     g.moveTo(x1 + dx * t, y1 + dy * t).lineTo(x1 + dx * end, y1 + dy * end);
@@ -171,15 +173,22 @@ function dashedLine(g, x1, y1, x2, y2, color, alpha = .8) {
 }
 const guideCache = new WeakMap();
 export function clearAim(g) { g.clear(); guideCache.delete(g); }
-export function drawAim(g, cue, balls, angle, _power = 0, tip = { x: 0, y: 0 }) {
+export function drawAim(g, cue, balls, angle, tip, group, onEight) {
   // Neither power nor animation time is part of the key: pulling the bar cannot move this guide.
-  const key = `${angle}:${tip.x}:${tip.y}:` + balls.map(b => `${b.number},${b.x},${b.y},${b.potted}`).join(';');
-  if (guideCache.get(g) === key) return;
-  guideCache.set(g, key); g.clear();
-  const { trace, objectDirection: d } = predictDirections(cue, balls, angle, tip);
+  const key = `${angle}:${tip.x}:${tip.y}:${group}:${onEight}:` + balls.map(b => `${b.number},${b.x},${b.y},${b.potted}`).join(';');
+  const cached = guideCache.get(g);
+  if (cached?.key === key) return cached.blocked;
+  const { trace, blocked, objectDirection: d } = predictDirections(cue, balls, angle, tip, group, onEight);
+  guideCache.set(g, { key, blocked });
+  g.clear();
+  if (blocked) {
+    dashedLine(g, cue.x, cue.y, trace.end.x, trace.end.y, 0xff8080, .85);
+    g.circle(trace.end.x, trace.end.y, BALL_R).stroke({ width: 2, color: 0xff8080, alpha: .85 });
+    return true;
+  }
   dashedLine(g, cue.x, cue.y, trace.end.x, trace.end.y, 0xf5ffef, .9);
   g.circle(trace.end.x, trace.end.y, BALL_R).stroke({ width: 2, color: 0xf3fff2, alpha: .85 });
-  if (!trace.target || !d) return;
+  if (!trace.target || !d) return false;
   const target = trace.target, start = { x: target.x + d.x * (BALL_R + 3), y: target.y + d.y * (BALL_R + 3) };
   const end = { x: target.x + d.x * 108, y: target.y + d.y * 108 };
   g.circle(target.x, target.y, BALL_R + 3).stroke({ color: 0xffdc70, width: 2, alpha: .9 });
@@ -188,6 +197,7 @@ export function drawAim(g, cue, balls, angle, _power = 0, tip = { x: 0, y: 0 }) 
   const size = 10;
   g.poly([end.x, end.y, end.x - size * d.x - size * .48 * d.y, end.y - size * d.y + size * .48 * d.x,
     end.x - size * d.x + size * .48 * d.y, end.y - size * d.y - size * .48 * d.x]).fill(0xffdc70);
+  return false;
 }
 
 export function drawPlacement(g, point, valid, headOnly = false) {
